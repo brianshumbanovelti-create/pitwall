@@ -171,6 +171,24 @@
   .wk-log .good{color:var(--green);} .wk-log .bad{color:var(--red);} .wk-log .warn{color:var(--amber);}
   .wk-log .purple{color:var(--purple);}
 
+  /* Strategy advice panel */
+  .strategy-preview{display:flex; flex-direction:column; gap:10px;}
+  .strat-row{background:var(--bg2); border-radius:3px; padding:10px 12px;}
+  .strat-row.recommended{border:1px solid var(--cyan); background:rgba(79,209,217,0.05);}
+  .strat-label{font-size:12px; font-weight:700; margin-bottom:2px;}
+  .strat-sub{font-size:10.5px; color:var(--dim); margin-bottom:8px;}
+  .strat-bar{display:flex; height:20px; border-radius:2px; overflow:hidden; background:var(--panel);}
+  .strat-seg{display:flex; align-items:center; justify-content:center; position:relative;
+    font-family:'JetBrains Mono', monospace; font-size:10px; font-weight:700; color:#0B0D10;}
+  .strat-seg.S{background:#ef4444;}
+  .strat-seg.M{background:#fbbf24;}
+  .strat-seg.H{background:#e5e7eb;}
+  .strat-seg.I{background:#22c55e;}
+  .strat-seg.W{background:#3b82f6; color:#fff;}
+  .strat-scale{display:flex; justify-content:space-between; font-size:9.5px; color:var(--dimmer);
+    font-family:'JetBrains Mono', monospace; margin-top:3px;}
+  .strat-pick{margin-top:6px; display:flex; gap:6px;}
+
   .tyre-select{display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;}
   .tyre-btn{padding:7px 12px; background:var(--panel2); border:1px solid var(--line);
     border-radius:3px; font-size:12px; display:flex; align-items:center; gap:6px; cursor:pointer;}
@@ -188,10 +206,24 @@
   .driver-strat-name{font-weight:700; font-size:13px; margin-bottom:8px; display:flex;
     justify-content:space-between; align-items:center;}
 
+  /* RACE SCREEN */
   .race-topbar{height:auto; padding:8px 16px; display:flex; align-items:center;
     flex-wrap:wrap; gap:10px 18px;}
   .race-track-name{font-weight:700; font-size:13.5px;}
   .race-track-meta{font-size:11px; color:var(--dim); display:flex; gap:8px;}
+
+  /* speed strip */
+  .speed-strip{display:flex; align-items:center; gap:4px;}
+  .speed-icon-btn{
+    width:32px; height:28px; display:inline-flex; align-items:center; justify-content:center;
+    background:var(--panel2); color:var(--dim); border:1px solid var(--line); border-radius:2px;
+    font-family:'JetBrains Mono', monospace; font-size:11px; font-weight:700;
+    transition:all 0.12s ease;
+  }
+  .speed-icon-btn:hover{background:var(--panel); color:var(--text);}
+  .speed-icon-btn.active{background:var(--cyan); color:#0B0D10; border-color:var(--cyan);}
+  .speed-icon-btn svg{width:13px; height:13px;}
+
   .flag-indicator{font-size:10.5px; font-weight:700; letter-spacing:0.5px; padding:4px 9px;
     border-radius:2px; text-transform:uppercase;}
   .flag-green{background:rgba(95,184,120,0.18); color:var(--green);}
@@ -204,29 +236,50 @@
 
   .lap-counter{font-family:'JetBrains Mono', monospace; font-size:13px;}
   .lap-counter b{color:var(--cyan);}
-  .weather-chip{font-size:11px; color:var(--dim); display:flex; align-items:center; gap:5px;}
-  .race-controls{display:flex; align-items:center; gap:6px; margin-left:auto;}
-  .speed-btn{padding:5px 10px; font-size:11.5px; font-weight:600; border-radius:2px;
-    background:var(--panel2); color:var(--dim); border:1px solid var(--line);}
-  .speed-btn.active{background:var(--cyan); color:#0B0D10; border-color:var(--cyan);}
 
-  .race-body{flex:1; display:flex; overflow:hidden; min-height:0;}
-  .race-tabs{display:flex; gap:1px; background:var(--line); border-radius:0; overflow:hidden;}
+  /* Message ribbon */
+  .msg-ribbon{
+    display:flex; align-items:center; gap:10px;
+    background:var(--bg2); border-bottom:1px solid var(--line);
+    padding:8px 16px; min-height:38px; flex-shrink:0;
+    cursor:pointer; transition:background 0.15s ease;
+    font-size:12px; overflow:hidden;
+  }
+  .msg-ribbon:hover{background:var(--panel);}
+  .msg-ribbon.flash{animation:ribbonFlash 0.9s ease;}
+  @keyframes ribbonFlash{0%{background:rgba(79,209,217,0.18);} 100%{background:var(--bg2);}}
+  .msg-ribbon .ribbon-icon{font-size:13px; flex-shrink:0;}
+  .msg-ribbon .ribbon-meta{
+    font-family:'JetBrains Mono', monospace; font-size:10.5px; color:var(--dimmer); flex-shrink:0;
+    display:flex; gap:8px;
+  }
+  .msg-ribbon .ribbon-text{
+    flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text);
+  }
+  .msg-ribbon .ribbon-text b{color:var(--cyan); font-weight:700;}
+  .msg-ribbon .ribbon-pips{
+    display:flex; gap:6px; flex-shrink:0; align-items:center;
+  }
+  .msg-ribbon .pip{font-size:12px;}
+  .msg-ribbon .pip.unread{color:var(--amber); font-weight:700; font-family:'JetBrains Mono', monospace; font-size:10.5px;}
+
+  .race-body{flex:1; display:flex; flex-direction:column; overflow:hidden; min-height:0;}
+
+  .race-tabs{display:flex; gap:1px; background:var(--line); overflow:hidden; flex-shrink:0;}
   .race-tab{padding:8px 16px; font-size:12px; background:var(--panel2); color:var(--dim); font-weight:600;
     display:flex; align-items:center; gap:6px;}
   .race-tab.active{background:var(--panel); color:var(--cyan);}
-  .race-tab .badge{color:var(--amber); font-size:16px; line-height:1;}
 
-  .timing-tower{width:100%; overflow-y:auto; min-height:0;}
+  .timing-tower{width:100%; overflow-y:auto; min-height:0; flex:1;}
   .tt-header{
     display:grid;
-    grid-template-columns: 30px 40px 1fr 32px 96px 44px 52px;
+    grid-template-columns: 30px 40px 1fr 32px 130px 44px 88px;
     gap:6px; padding:7px 12px; font-size:9.5px; color:var(--dimmer); font-weight:700;
     letter-spacing:0.4px; text-transform:uppercase; border-bottom:1px solid var(--line);
     position:sticky; top:0; background:var(--bg); z-index:2;}
   .tt-row{
     display:grid;
-    grid-template-columns: 30px 40px 1fr 32px 96px 44px 52px;
+    grid-template-columns: 30px 40px 1fr 32px 130px 44px 88px;
     gap:6px; padding:8px 12px; align-items:center; font-size:12px;
     border-bottom:1px solid rgba(42,47,56,0.4); transition:background 0.4s ease; cursor:pointer;}
   .tt-row.me{background:rgba(79,209,217,0.07);}
@@ -250,46 +303,38 @@
   .tyre-I{color:var(--green); border-color:var(--green);}
   .tyre-W{color:var(--cyan); border-color:var(--cyan);}
   .tt-gap{font-family:'JetBrains Mono', monospace; color:var(--dim); font-size:11.5px;}
-  .tt-tyreage{font-family:'JetBrains Mono', monospace; color:var(--dimmer); font-size:11px;}
   .tt-pits{font-family:'JetBrains Mono', monospace; color:var(--dimmer); font-size:11px; text-align:right;}
   .crown{color:var(--purple); font-size:12px;}
 
-  /* New columns: pit col, tyre+health, action */
   .tt-pitcol{text-align:center;}
   .in-pit-indicator{color:#60a5fa; font-size:12px; display:inline-block;}
-  .tt-tyres{display:flex; align-items:center; gap:5px;}
-  .tt-action{text-align:right;}
+  .tt-bars{display:flex; flex-direction:column; gap:3px;}
+  .tt-bar-row{display:flex; align-items:center; gap:5px;}
+  .tt-bar-track{flex:1; height:5px; background:var(--panel2); border-radius:3px; overflow:hidden; position:relative;}
+  .tt-bar-fill{height:100%; transition:width 0.35s ease, background 0.35s ease; border-radius:3px;}
+  .tt-bar-label{font-family:'JetBrains Mono', monospace; font-size:9.5px; color:var(--dimmer); width:52px;}
+  .tt-action{display:flex; gap:4px; justify-content:flex-end;}
 
-  /* Pit button */
   .pit-btn{
     font-family:'JetBrains Mono', monospace;
     font-size:10px; font-weight:700; letter-spacing:0.4px;
     padding:4px 8px; border-radius:2px; border:1px solid var(--line);
-    cursor:pointer; transition:all 0.15s ease;
+    cursor:pointer; transition:all 0.15s ease; min-width:40px;
   }
   .pit-btn-idle{background:var(--panel2); color:var(--dim);}
   .pit-btn-idle:hover{background:var(--panel); color:var(--text);}
   .pit-btn-armed{background:var(--green); color:#0B0D10; border-color:var(--green); animation:pulse 1.2s infinite;}
 
-  .feed-panel{width:320px; min-width:320px; border-left:1px solid var(--line);
-    display:flex; flex-direction:column; background:var(--bg2); min-height:0;}
-  .feed-header{padding:9px 14px; border-bottom:1px solid var(--line); font-size:10.5px;
-    font-weight:700; letter-spacing:0.5px; color:var(--dimmer); text-transform:uppercase; flex-shrink:0;}
-  .feed-scroll{flex:1; overflow-y:auto; padding:8px 12px; display:flex;
-    flex-direction:column-reverse; min-height:0;}
-  .feed-item{font-size:11.5px; line-height:1.5; padding:7px 0;
-    border-bottom:1px solid rgba(42,47,56,0.4); color:var(--dim);}
-  .feed-item b{color:var(--text);}
-  .feed-item.flag{color:var(--amber);} .feed-item.flag b{color:var(--amber);}
-  .feed-item.danger{color:var(--red);} .feed-item.danger b{color:var(--red);}
-  .feed-item.good{color:var(--green);}
-  .feed-item.radio{color:var(--purple); font-style:italic;}
-  .feed-item.pit{color:#60a5fa;}
-  .feed-item .feed-lap{color:var(--dimmer); font-family:'JetBrains Mono', monospace;
-    font-size:10px; margin-right:5px;}
+  .radio-btn{
+    width:28px; height:24px; display:inline-flex; align-items:center; justify-content:center;
+    background:var(--panel2); border:1px solid var(--line); border-radius:2px;
+    color:var(--cyan); cursor:pointer; transition:all 0.15s ease;
+  }
+  .radio-btn:hover{background:var(--cyan); color:#0B0D10;}
+  .radio-btn svg{width:14px; height:14px;}
 
   .track-view{width:100%; display:flex; align-items:center; justify-content:center;
-    padding:12px; overflow:hidden; min-height:0; position:relative;}
+    padding:12px; overflow:hidden; min-height:0; flex:1; position:relative;}
   #trackCanvas{max-width:100%; max-height:100%;}
   .sector-legend{position:absolute; top:12px; right:12px; background:rgba(15,19,28,0.85);
     border:1px solid var(--line); border-radius:3px; padding:8px 10px; font-size:10.5px;
@@ -299,20 +344,6 @@
   .sector-legend .dot.green{background:var(--green);}
   .sector-legend .dot.yellow{background:var(--amber);}
   .sector-legend .dot.red{background:var(--red);}
-
-  .msg-panel{width:100%; display:flex; flex-direction:column; min-height:0; flex:1;}
-  .msg-scroll{flex:1; overflow-y:auto; padding:12px 16px; min-height:0;}
-  .msg-bubble{background:var(--panel2); border-left:3px solid var(--purple);
-    padding:9px 12px; border-radius:3px; margin-bottom:9px; font-size:12px; line-height:1.5;}
-  .msg-bubble.driver{border-left-color:var(--cyan); background:var(--panel);}
-  .msg-bubble.you{border-left-color:var(--green); background:rgba(95,184,120,0.06);}
-  .msg-bubble .msg-head{font-size:10.5px; color:var(--dim); text-transform:uppercase;
-    letter-spacing:0.4px; margin-bottom:3px; font-weight:700;}
-  .radio-send{border-top:1px solid var(--line); padding:12px 16px; background:var(--bg2); flex-shrink:0;}
-  .radio-send select{background:var(--panel2); color:var(--text); border:1px solid var(--line);
-    padding:7px 10px; border-radius:2px; font-family:inherit; font-size:12px; width:100%; margin-bottom:8px;}
-  .radio-buttons{display:grid; grid-template-columns:1fr 1fr; gap:6px;}
-  .radio-buttons .btn{justify-content:flex-start; font-size:11.5px; padding:8px 10px; text-align:left;}
 
   .decision-bar{border-top:1px solid var(--line); background:var(--panel);
     padding:14px 20px; display:none; flex-shrink:0;}
@@ -333,10 +364,32 @@
     display:none; align-items:center; justify-content:center; z-index:100; padding:16px;}
   .modal-overlay.active{display:flex;}
   .modal{background:var(--panel); border:1px solid var(--line); border-radius:4px;
-    max-width:640px; width:100%; padding:24px; max-height:88vh; overflow-y:auto;}
+    max-width:720px; width:100%; padding:24px; max-height:88vh; overflow-y:auto;}
   .modal h2{font-size:18px; margin-bottom:12px;}
   .modal p{font-size:13px; color:var(--dim); line-height:1.6; margin-bottom:9px;}
   .modal-actions{display:flex; gap:9px; justify-content:flex-end; margin-top:18px; flex-wrap:wrap;}
+
+  /* Message log modal rows */
+  .msg-log{display:flex; flex-direction:column; gap:6px; margin-top:8px;}
+  .msg-log-row{
+    display:grid; grid-template-columns: 100px 32px 1fr;
+    gap:10px; align-items:start;
+    padding:8px 10px; background:var(--panel2); border-radius:3px;
+    font-size:12.5px; line-height:1.5;
+    border-left:3px solid var(--dimmer);
+  }
+  .msg-log-row.radio{border-left-color:var(--purple);}
+  .msg-log-row.you{border-left-color:var(--green);}
+  .msg-log-row.engineer{border-left-color:var(--cyan);}
+  .msg-log-row.pit{border-left-color:#60a5fa;}
+  .msg-log-row.flag{border-left-color:var(--amber);}
+  .msg-log-row.danger{border-left-color:var(--red);}
+  .msg-log-row.weather{border-left-color:#67e8f9;}
+  .msg-log-time{font-family:'JetBrains Mono', monospace; font-size:10.5px; color:var(--dimmer);}
+  .msg-log-icon{text-align:center;}
+  .msg-log-text b{color:var(--cyan);}
+
+  .msg-filter{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px;}
 
   .banner-flash{position:fixed; top:70px; left:50%; transform:translateX(-50%);
     padding:12px 24px; border-radius:3px; font-weight:700; font-size:13px;
@@ -368,27 +421,25 @@
     cursor:pointer; color:var(--cyan);}
   .dd-headset:hover{background:var(--cyan); color:#0B0D10;}
 
+  /* Radio panel */
+  .radio-panel{background:var(--bg2); border-top:1px solid var(--line); padding:10px 16px; flex-shrink:0;}
+  .radio-buttons{display:grid; grid-template-columns:repeat(4, 1fr); gap:6px;}
+  .radio-buttons .btn{justify-content:flex-start; font-size:11px; padding:7px 9px; text-align:left;}
+
   @media (max-width:900px){
     .hub-side{display:none;}
-    .feed-panel{display:none;}
     .ts-grid{grid-template-columns:1fr;}
     .ts-header{padding:14px 18px;}
     .ts-footer{padding:10px 16px calc(10px + env(safe-area-inset-bottom)); justify-content:stretch;}
     .ts-footer .btn{flex:1;}
     .intro-title{font-size:30px;}
     .intro-wrap{padding:24px 18px;}
-    .race-body{flex-direction:column;}
-    .timing-tower{flex:1; min-height:0;}
-    .race-controls{margin-left:0; width:100%; justify-content:flex-end;}
     .topbar{padding:8px 12px; gap:8px 12px;}
     .hub-main{padding:18px;}
     .wk-body{padding:14px;}
-    /* Mobile timing tower — squeeze columns */
-    .tt-header, .tt-row{
-      grid-template-columns: 26px 34px 1fr 30px 78px 0 48px;
-    }
-    .tt-header > *:nth-child(6), .tt-row > *:nth-child(6){display:none;} /* hide pits on mobile */
-    .decision-opt{min-width:100%;}
+    .tt-header, .tt-row{grid-template-columns: 24px 30px 1fr 26px 100px 0 76px;}
+    .tt-header > *:nth-child(6), .tt-row > *:nth-child(6){display:none;}
+    .radio-buttons{grid-template-columns:repeat(2, 1fr);}
   }
 </style>
 </head>
@@ -474,58 +525,59 @@
       </div>
       <div class="flag-indicator flag-green" id="flagIndicator">Green</div>
       <div class="lap-counter">LAP <b id="lapNow">0</b>/<span id="lapTotal">0</span></div>
-      <div class="weather-chip" id="weatherChip"></div>
-      <div class="race-controls">
-        <button class="speed-btn" id="speedPause">Pause</button>
-        <button class="speed-btn active" id="speed1">1x</button>
-        <button class="speed-btn" id="speed2">2x</button>
-        <button class="speed-btn" id="speed4">4x</button>
-        <button class="speed-btn" id="speedSkip">Skip to end</button>
+      <div class="speed-strip">
+        <button class="speed-icon-btn" id="speedPause" title="Pause / Play">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+        </button>
+        <button class="speed-icon-btn" id="speed2" title="2x speed">×2</button>
+        <button class="speed-icon-btn" id="speed4" title="4x speed">×4</button>
+        <button class="speed-icon-btn" id="speedSkip" title="Skip to end">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h4v16H4zm6 8l8-8v16z"/></svg>
+        </button>
       </div>
     </div>
+
+    <!-- Message ribbon -->
+    <div class="msg-ribbon" id="msgRibbon" title="Click for full message log">
+      <span class="ribbon-icon" id="ribbonIcon">📻</span>
+      <span class="ribbon-meta"><span id="ribbonLap">L0</span><span id="ribbonTime">--:--</span></span>
+      <span class="ribbon-text" id="ribbonText">Race feed initialising…</span>
+      <span class="ribbon-pips" id="ribbonPips"></span>
+    </div>
+
     <div class="race-body">
-      <div style="flex:1; display:flex; flex-direction:column; min-height:0; min-width:0;">
-        <div class="race-tabs">
-          <button class="race-tab active" id="tabTower">Timing</button>
-          <button class="race-tab" id="tabTrack">Track</button>
-          <button class="race-tab" id="tabMessages">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>
-            Messages <span class="badge" id="msgBadge" style="display:none">●</span>
-          </button>
-        </div>
-
-        <div id="towerWrap" class="timing-tower" style="flex:1;">
-          <div class="tt-header">
-            <span>P</span>
-            <span>DRV</span>
-            <span>INTERVAL</span>
-            <span>PIT</span>
-            <span>TYRE + HEALTH</span>
-            <span>PITS</span>
-            <span></span>
-          </div>
-          <div id="towerBody"></div>
-        </div>
-
-        <div id="trackWrap" class="track-view" style="display:none; flex:1;">
-          <canvas id="trackCanvas" width="720" height="500"></canvas>
-          <div class="sector-legend" id="sectorLegend"></div>
-        </div>
-
-        <div id="messagesWrap" class="msg-panel" style="display:none;">
-          <div class="msg-scroll" id="msgScroll"></div>
-          <div class="radio-send">
-            <select id="radioDriver"></select>
-            <div class="radio-buttons" id="radioButtons"></div>
-          </div>
-        </div>
+      <div class="race-tabs">
+        <button class="race-tab active" id="tabTower">Timing</button>
+        <button class="race-tab" id="tabTrack">Track</button>
       </div>
 
-      <div class="feed-panel">
-        <div class="feed-header">Race Feed</div>
-        <div class="feed-scroll" id="feedScroll"></div>
+      <div id="towerWrap" class="timing-tower">
+        <div class="tt-header">
+          <span>P</span>
+          <span>DRV</span>
+          <span>INTERVAL</span>
+          <span>PIT</span>
+          <span>TYRE · HEALTH</span>
+          <span>STOPS</span>
+          <span>ACTION</span>
+        </div>
+        <div id="towerBody"></div>
+      </div>
+
+      <div id="trackWrap" class="track-view" style="display:none;">
+        <canvas id="trackCanvas" width="960" height="560"></canvas>
+        <div class="sector-legend" id="sectorLegend"></div>
       </div>
     </div>
+
+    <div class="radio-panel" id="radioPanel" style="display:none;">
+      <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px">
+        <div style="flex:1"><select id="radioDriver"></select></div>
+        <button class="btn btn-ghost btn-sm" id="radioClose">Close</button>
+      </div>
+      <div class="radio-buttons" id="radioButtons"></div>
+    </div>
+
     <div class="decision-bar" id="decisionBar">
       <div class="decision-title"><span class="pulse-dot"></span><span id="decisionTitle"></span></div>
       <div class="decision-sub" id="decisionSub"></div>
