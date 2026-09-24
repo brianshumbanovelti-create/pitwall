@@ -4,12 +4,8 @@ let WEEKEND = null;
 function startWeekend(){
   const track = currentTrack();
   WEEKEND = {
-    track,
-    fp: [],
-    quali: null,
-    qualiStage: null,
-    strategy: {},
-    stage: 'fp',
+    track, fp: [], quali: null, qualiStage: null,
+    strategy: {}, stage: 'fp',
   };
   myTeam().drivers.forEach(d=>{
     WEEKEND.strategy[d.abbr] = { tyre: 'M', plan: '1-stop', orders: 'fight' };
@@ -23,7 +19,6 @@ function renderWeekend(){
   document.getElementById('wkRound').textContent = `ROUND ${STATE.round+1} · SEASON ${STATE.season}`;
   document.getElementById('wkTrack').textContent = `${track.name} — ${track.country}`;
   document.getElementById('wkMeta').innerHTML = `${track.laps} laps · ${track.tempC}°C air / ${track.trackTempC}°C track · 💨 ${track.windKmh} km/h · ${track.character}`;
-
   const body = document.getElementById('wkBody');
   body.innerHTML = '';
   body.appendChild(buildFpBlock());
@@ -68,7 +63,7 @@ function buildStrategyPreview(){
     strategies.push({ label:'Full wet start', sub:'Maximum grip at start', stints:[['W', 0.35], ['I', 0.35], ['M', 0.30]] });
     strategies.push({ label:'Gamble on slicks', sub:'Risk it if you think it dries fast', stints:[['S', 0.3], ['M', 0.7]] });
   } else if(rainLikely){
-    strategies.push({ label:'Medium start', sub:'Build flex, ready to switch to inters if rain comes', stints:[['M', 0.6], ['M', 0.4]], rec:true });
+    strategies.push({ label:'Medium start', sub:'Flexible — ready to switch to inters if rain comes', stints:[['M', 0.6], ['M', 0.4]], rec:true });
     strategies.push({ label:'Two-stop', sub:'Aggressive if it stays dry', stints:[['S', 0.35], ['M', 0.35], ['S', 0.30]] });
     strategies.push({ label:'Hard long run', sub:'Track position play', stints:[['H', 0.55], ['M', 0.45]] });
   } else if(hot){
@@ -88,9 +83,10 @@ function buildStrategyPreview(){
 
   const rows = strategies.map((s, i)=>{
     const rec = s.rec ? ' recommended' : '';
-    const bars = s.stints.map(([t, frac])=>`
-      <div class="strat-seg ${t}" style="flex:${frac}">${t}</div>
-    `).join('');
+    const bars = s.stints.map(([t, frac])=>{
+      const lapsForStint = Math.round(totalLaps * frac);
+      return `<div class="strat-seg ${t}" style="flex:${frac}">${lapsForStint}</div>`;
+    }).join('');
     return `
       <div class="strat-row${rec}">
         <div class="strat-label">${s.label}${s.rec?' <span style="color:var(--cyan)">● recommended</span>':''}</div>
@@ -105,17 +101,13 @@ function buildStrategyPreview(){
 
   const ticks = [];
   const step = Math.max(5, Math.round(totalLaps/10));
-  for(let i=0;i<=totalLaps;i+=step){
-    ticks.push(i);
-  }
+  for(let i=0;i<=totalLaps;i+=step) ticks.push(i);
 
   return `
-    <div style="margin-top:18px">
+    <div style="margin-top:18px" data-strat-preview>
       <div style="font-size:12.5px;font-weight:700;margin-bottom:8px">Strategy preview</div>
-      <div class="strategy-preview" id="stratPreview">${rows}</div>
-      <div class="strat-scale">
-        ${ticks.map(t=>`<span>${t}</span>`).join('')}
-      </div>
+      <div class="strategy-preview">${rows}</div>
+      <div class="strat-scale">${ticks.map(t=>`<span>${t}</span>`).join('')}</div>
     </div>
   `;
 }
@@ -143,7 +135,7 @@ function runFp(){
   renderWeekend();
 }
 
-// ---------- Qualifying (3 stages) ----------
+// ---------- Qualifying ----------
 function buildQualiBlock(){
   const completed = !!(WEEKEND.quali && WEEKEND.quali.grid);
   const locked = WEEKEND.fp.length === 0;
@@ -161,8 +153,8 @@ function buildQualiBlock(){
     <div class="wk-step-header"><span><span class="step-num">02</span>Qualifying — Q1 / Q2 / Q3</span>
       <span>${completed?'✓ Complete':locked?'Locked':''}</span></div>
     <div class="wk-step-body">
-      <p class="dim small" style="margin-bottom:10px">Q1: 22 cars → 15 advance. Q2: 15 → 10. Q3: shootout for grid.</p>
-      ${WEEKEND.qualiStage ? `<div class="wk-log" id="qualiLog">${renderQualiLog()}</div>` : ''}
+      <p class="dim small" style="margin-bottom:10px">Q1: 22 → 15. Q2: 15 → 10. Q3: shootout for grid.</p>
+      ${WEEKEND.qualiStage ? `<div class="wk-log">${renderQualiLog()}</div>` : ''}
       <div style="margin-top:10px">${stageButton}</div>
     </div>
   `;
@@ -176,7 +168,6 @@ function buildQualiBlock(){
   }
   return el;
 }
-
 function renderQualiLog(){
   if(!WEEKEND.qualiStage) return '';
   if(!WEEKEND.quali) return '<div>Awaiting stage results...</div>';
@@ -184,41 +175,34 @@ function renderQualiLog(){
 }
 
 function runQualiStage(stage){
-  const track = WEEKEND.track;
-  const lines = [];
   const allDrivers = TEAMS.flatMap(t=>t.drivers.map(d=>({
-    ...d,
-    teamId: t.id,
+    ...d, teamId: t.id,
     teamPace: t.pace + (t.id===STATE.myTeamId?STATE.carPaceBoost:0) + (t.id===STATE.myTeamId?(STATE.upgrades.aero+STATE.upgrades.pu)*2:0),
   })));
+  const lines = [];
 
   if(stage==='q1'){
-    const times = allDrivers
-      .map(d=>({ ...d, time: 100 - (d.teamPace*0.35 + d.skill*0.25) + randf(-0.6,0.6) }))
-      .sort((a,b)=>a.time-b.time);
+    const times = allDrivers.map(d=>({ ...d, time: 100 - (d.teamPace*0.35 + d.skill*0.25) + randf(-0.6,0.6) })).sort((a,b)=>a.time-b.time);
     const advancing = times.slice(0,15);
     const out = times.slice(15);
     lines.push(`<div class="good">Q1 complete. ${out.length} eliminated.</div>`);
-    out.forEach(d=> lines.push(`<div class="bad">OUT: P${times.indexOf(d)+1} ${d.abbr} (${d.teamId.toUpperCase()}) ${d.time.toFixed(2)}</div>`));
+    out.forEach(d=> lines.push(`<div class="bad">OUT: P${times.indexOf(d)+1} ${d.abbr} ${d.time.toFixed(2)}</div>`));
     advancing.slice(0,5).forEach((d,i)=> lines.push(`<div>P${i+1} ${d.abbr} ${d.time.toFixed(2)}</div>`));
-    lines.push('<div class="dim">…top 15 advance to Q2.</div>');
+    lines.push('<div class="dim">…top 15 advance.</div>');
     WEEKEND.qualiStage = 'q1';
     WEEKEND.quali = { q1Advancing: advancing, q1All: times, log: lines.join('') };
     renderWeekend();
     return;
   }
-
   if(stage==='q2'){
     if(!WEEKEND.quali || !WEEKEND.quali.q1Advancing) return;
-    const pool = WEEKEND.quali.q1Advancing
-      .map(d=>({ ...d, time: 100 - (d.teamPace*0.35 + d.skill*0.25) + randf(-0.6,0.6) }))
-      .sort((a,b)=>a.time-b.time);
+    const pool = WEEKEND.quali.q1Advancing.map(d=>({ ...d, time: 100 - (d.teamPace*0.35 + d.skill*0.25) + randf(-0.6,0.6) })).sort((a,b)=>a.time-b.time);
     const advancing = pool.slice(0,10);
     const out = pool.slice(10);
-    lines.push(`<div class="good">Q2 complete. 5 more eliminated.</div>`);
+    lines.push(`<div class="good">Q2 complete. 5 eliminated.</div>`);
     out.forEach(d=> lines.push(`<div class="bad">OUT: P${pool.indexOf(d)+11} ${d.abbr} ${d.time.toFixed(2)}</div>`));
     advancing.slice(0,5).forEach((d,i)=> lines.push(`<div>P${i+1} ${d.abbr} ${d.time.toFixed(2)}</div>`));
-    lines.push('<div class="dim">…top 10 advance to Q3.</div>');
+    lines.push('<div class="dim">…top 10 advance.</div>');
     WEEKEND.qualiStage = 'q2';
     WEEKEND.quali.q2Advancing = advancing;
     WEEKEND.quali.q2All = pool;
@@ -226,19 +210,14 @@ function runQualiStage(stage){
     renderWeekend();
     return;
   }
-
   if(stage==='q3'){
     if(!WEEKEND.quali || !WEEKEND.quali.q2Advancing) return;
-    const pool = WEEKEND.quali.q2Advancing
-      .map(d=>({ ...d, time: 100 - (d.teamPace*0.35 + d.skill*0.25) + randf(-0.4,0.4) }))
-      .sort((a,b)=>a.time-b.time);
+    const pool = WEEKEND.quali.q2Advancing.map(d=>({ ...d, time: 100 - (d.teamPace*0.35 + d.skill*0.25) + randf(-0.4,0.4) })).sort((a,b)=>a.time-b.time);
     lines.push(`<div class="good">Q3 complete. Grid set.</div>`);
-    pool.forEach((d,i)=> lines.push(`<div>${i+1}. ${d.abbr} (${d.teamId.toUpperCase()}) ${d.time.toFixed(2)}</div>`));
-
+    pool.forEach((d,i)=> lines.push(`<div>${i+1}. ${d.abbr} ${d.time.toFixed(2)}</div>`));
     const eliminatedQ2 = WEEKEND.quali.q2All.slice(10);
     const eliminatedQ1 = WEEKEND.quali.q1All.slice(15);
     const grid = [...pool, ...eliminatedQ2, ...eliminatedQ1];
-
     WEEKEND.qualiStage = 'q3';
     WEEKEND.quali.grid = grid;
     WEEKEND.quali.log = (WEEKEND.quali.log || '') + lines.join('');
@@ -247,7 +226,7 @@ function runQualiStage(stage){
   }
 }
 
-// ---------- Strategy ----------
+// ---------- Strategy block ----------
 function buildStrategyBlock(){
   const locked = !(WEEKEND.quali && WEEKEND.quali.grid);
   const el = document.createElement('div');
@@ -269,12 +248,10 @@ function buildStrategyBlock(){
   }
   return el;
 }
-
 function driverStratHtml(d){
   const s = WEEKEND.strategy[d.abbr];
   const gridPos = WEEKEND.quali && WEEKEND.quali.grid
-    ? (WEEKEND.quali.grid.findIndex(g=>g.abbr===d.abbr)+1)
-    : '—';
+    ? (WEEKEND.quali.grid.findIndex(g=>g.abbr===d.abbr)+1) : '—';
   return `
     <div class="driver-strat" data-abbr="${d.abbr}">
       <div class="driver-strat-name">
@@ -304,7 +281,6 @@ function driverStratHtml(d){
     </div>
   `;
 }
-
 function bindStrategyControls(scope){
   const root = scope || document;
   root.querySelectorAll('[data-tyre]').forEach(b=>b.addEventListener('click', ()=>{
@@ -320,7 +296,6 @@ function bindStrategyControls(scope){
     refreshStrategyBlock();
   }));
 }
-
 function refreshStrategyBlock(){
   const wrap = document.getElementById('strategyDrivers');
   if(!wrap) return;
@@ -347,17 +322,20 @@ function buildGoRacingBlock(){
   return el;
 }
 
-// Strategy picker — attaches once per render, uses event delegation
-document.addEventListener('click', (e)=>{
-  const b = e.target.closest('[data-strat]');
-  if(!b || !WEEKEND) return;
+// Strategy preview — event delegation for "Use this"
+document.addEventListener('click', function(e){
+  const b = e.target.closest && e.target.closest('[data-strat]');
+  if(!b || !WEEKEND || !WEEKEND.strategy) return;
   const stratIdx = parseInt(b.dataset.strat);
-  // Apply default plan; user can still edit individual drivers in the strategy block
+  const presets = [
+    { tyre:'M', plan:'1-stop' },
+    { tyre:'H', plan:'1-stop' },
+    { tyre:'S', plan:'2-stop' },
+    { tyre:'M', plan:'2-stop' },
+  ];
+  const pick_ = presets[stratIdx] || presets[0];
   myTeam().drivers.forEach(d=>{
-    if(!WEEKEND.strategy[d.abbr]) WEEKEND.strategy[d.abbr] = {};
-    WEEKEND.strategy[d.abbr].tyre = 'M';
-    WEEKEND.strategy[d.abbr].plan = '1-stop';
-    WEEKEND.strategy[d.abbr].orders = 'fight';
+    WEEKEND.strategy[d.abbr] = { ...WEEKEND.strategy[d.abbr], tyre: pick_.tyre, plan: pick_.plan };
   });
   renderWeekend();
 });
