@@ -63,8 +63,8 @@ function buildStrategyPreview(){
     strategies.push({ label:'Full wet start', sub:'Maximum grip at start', stints:[['W', 0.35], ['I', 0.35], ['M', 0.30]] });
     strategies.push({ label:'Gamble on slicks', sub:'Risk it if you think it dries fast', stints:[['S', 0.3], ['M', 0.7]] });
   } else if(rainLikely){
-    strategies.push({ label:'Medium start', sub:'Flexible — ready to switch to inters if rain comes', stints:[['M', 0.6], ['M', 0.4]], rec:true });
-    strategies.push({ label:'Two-stop', sub:'Aggressive if it stays dry', stints:[['S', 0.35], ['M', 0.35], ['S', 0.30]] });
+    strategies.push({ label:'Medium start', sub:'Flexible — ready to switch to inters if rain comes', stints:[['M', 0.6], ['H', 0.4]], rec:true });
+    strategies.push({ label:'Two-stop', sub:'Aggressive if it stays dry', stints:[['S', 0.35], ['M', 0.35], ['H', 0.30]] });
     strategies.push({ label:'Hard long run', sub:'Track position play', stints:[['H', 0.55], ['M', 0.45]] });
   } else if(hot){
     strategies.push({ label:'Two-stop', sub:'Hot track chews tyres — plan two stops', stints:[['S', 0.35], ['M', 0.35], ['H', 0.30]], rec:true });
@@ -226,7 +226,7 @@ function runQualiStage(stage){
   }
 }
 
-// ---------- Strategy block ----------
+// ---------- Strategy ----------
 function buildStrategyBlock(){
   const locked = !(WEEKEND.quali && WEEKEND.quali.grid);
   const el = document.createElement('div');
