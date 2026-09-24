@@ -1,7 +1,7 @@
 // ===================== STATE =====================
 const SAVE_PREFIX = 'pitwall_slot_';
 const SAVE_SLOTS = 3;
-const SAVE_VERSION = 7;
+const SAVE_VERSION = 8;
 const COST_CAP = 200;
 
 let STATE = null;
@@ -58,17 +58,17 @@ function clamp(v,min,max){ return Math.max(min,Math.min(max,v)); }
 
 // ===================== PRINCIPAL STYLES =====================
 const PRINCIPAL_STYLES = {
-  mer: { style:'conservative', pitBias: 1.10, undercutChance: 0.15, label:'Conservative' },
-  fer: { style:'aggressive',   pitBias: 0.88, undercutChance: 0.40, label:'Aggressive' },
-  mcl: { style:'tyre-whisperer',pitBias:1.05, undercutChance: 0.20, label:'Tyre-whisperer' },
-  rbr: { style:'balanced',     pitBias: 1.00, undercutChance: 0.30, label:'Balanced' },
-  vcb: { style:'balanced',     pitBias: 1.00, undercutChance: 0.25, label:'Balanced' },
-  alp: { style:'aggressive',   pitBias: 0.92, undercutChance: 0.35, label:'Aggressive' },
-  haa: { style:'conservative', pitBias: 1.08, undercutChance: 0.12, label:'Conservative' },
-  aud: { style:'conservative', pitBias: 1.08, undercutChance: 0.12, label:'Conservative' },
-  wil: { style:'balanced',     pitBias: 1.00, undercutChance: 0.22, label:'Balanced' },
-  amr: { style:'aggressive',   pitBias: 0.90, undercutChance: 0.38, label:'Aggressive' },
-  cad: { style:'conservative', pitBias: 1.10, undercutChance: 0.10, label:'Conservative' },
+  mer: { style:'conservative', pitBias: 1.10, label:'Conservative' },
+  fer: { style:'aggressive',   pitBias: 0.88, label:'Aggressive' },
+  mcl: { style:'tyre-whisperer',pitBias:1.05, label:'Tyre-whisperer' },
+  rbr: { style:'balanced',     pitBias: 1.00, label:'Balanced' },
+  vcb: { style:'balanced',     pitBias: 1.00, label:'Balanced' },
+  alp: { style:'aggressive',   pitBias: 0.92, label:'Aggressive' },
+  haa: { style:'conservative', pitBias: 1.08, label:'Conservative' },
+  aud: { style:'conservative', pitBias: 1.08, label:'Conservative' },
+  wil: { style:'balanced',     pitBias: 1.00, label:'Balanced' },
+  amr: { style:'aggressive',   pitBias: 0.90, label:'Aggressive' },
+  cad: { style:'conservative', pitBias: 1.10, label:'Conservative' },
 };
 
 // ===================== PERSISTENCE =====================
@@ -417,7 +417,7 @@ function advanceSeason(){
   renderHub();
 }
 
-// ===================== HIRING / UPGRADES / MARKET / ARCHIVE =====================
+// ===================== HIRING =====================
 function generateCandidates(){
   const team = myTeam();
   const tierBase = { title:70, contender:58, midfield:48, backmarker:38 }[team.tier];
@@ -492,6 +492,7 @@ function recalcCarBoosts(){
   STATE.carReliabilityBoost = Math.round((r-60)/6);
 }
 
+// ===================== UPGRADES =====================
 function openUpgradesModal(){
   const slots = ['aero','pu','rel','strat'];
   const labels = { aero:'Aero Package', pu:'Power Unit', rel:'Reliability', strat:'Strategy Dept' };
@@ -546,6 +547,7 @@ function applyPendingUpgrades(){
   });
 }
 
+// ===================== DRIVER MARKET =====================
 function openMarketModal(){
   if(STATE.marketOffers.length===0) STATE.marketOffers = generateMarketOffers();
   openModal(`
@@ -604,6 +606,7 @@ function generateMarketOffers(){
   return pool.sort(()=>Math.random()-0.5).slice(0,4).map((p,i)=>({ ...p, id:'off_'+Date.now()+'_'+i }));
 }
 
+// ===================== ARCHIVE =====================
 function openArchiveModal(){
   const rows = STATE.seasonArchive.map(a=>`
     <div class="save-slot">
@@ -635,12 +638,9 @@ let simIntervalMs = 5000;
 const PACE_SCALE = 0.20;
 const BASE_LAP   = 90;
 
-function raceWallStart(){
-  RACE.wallStartMs = Date.now();
-}
 function formatClock(ms){
   const d = new Date(ms);
-  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 
 function startRace(gridOverride, strategyOverride){
@@ -656,6 +656,7 @@ function startRace(gridOverride, strategyOverride){
       d.tyre = aiStartTyre(track);
       d.pitPlan = Math.random()<0.5?'1-stop':'2-stop';
     }
+    d.usedCompounds = new Set([d.tyre]);
     d.nextPitLap = d.pitPlan==='2-stop' ? Math.round(track.laps*randf(0.28,0.36)) : Math.round(track.laps*randf(0.42,0.58));
   });
 
@@ -663,7 +664,7 @@ function startRace(gridOverride, strategyOverride){
     const d = RACE.drivers.find(x=>x.abbr===abbr);
     if(d){
       d.startPosition = clamp(d.startPosition + places, 1, RACE.drivers.length);
-      pushMsg('system', 'Race control', `${abbr} drops ${places} grid places (engine penalty).`);
+      pushMsg('rc', 'RC:', `${abbr} drops ${places} grid places (engine penalty).`);
     }
   });
   RACE.drivers.sort((a,b)=>a.startPosition-b.startPosition);
@@ -673,7 +674,6 @@ function startRace(gridOverride, strategyOverride){
   showScreen('screen-race');
   initRaceUI(track);
   renderTower();
-  raceWallStart();
   raceSpeed = 1; racePaused = false;
   updateSpeedButtons();
   simIntervalMs = (5*60*1000)/track.laps;
@@ -692,6 +692,7 @@ function buildRaceState(track, gridOverride){
     totalTime: 0,
     gapToLeader: 0, interval: 0,
     tyre:'M', tyreAge:0, pitStops:0, pitHistory:[],
+    usedCompounds: new Set(['M']),
     retired:false, retiredReason:null, retiredLap:null,
     damage:0, penaltyLapsLeft:0,
     distanceCovered: 0,
@@ -712,9 +713,8 @@ function buildRaceState(track, gridOverride){
     _armedTyre: null,
     _armedRepair: 0,
     _lastMessageLap: {},
-    _lastFrac: 0,
-    _targetFrac: 0,
-    _displayFrac: 0,
+    dsq: false,
+    dsqReason: null,
   }));
   return {
     track, laps, wetness, lap:0,
@@ -732,6 +732,7 @@ function buildRaceState(track, gridOverride){
     fastestLapTime: null,
     unreadCount: 0,
     wallStartMs: Date.now(),
+    _lastWetBand: undefined,
   };
 }
 
@@ -794,8 +795,22 @@ function initRaceUI(track){
     document.getElementById('radioPanel').style.display = 'none';
   });
   renderSectorLegend();
-  pushMsg('system', 'Pit Wall', `Radio link open. Green flag at ${track.name}.`);
+  pushMsg('strat', 'STRAT:', `Radio link open. Green flag at ${track.name}.`);
+  resizeTrackCanvas();
 }
+
+function resizeTrackCanvas(){
+  const canvas = document.getElementById('trackCanvas');
+  if(!canvas) return;
+  const wrap = canvas.parentElement;
+  const rect = wrap.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(320, rect.width * dpr);
+  canvas.height = Math.max(240, rect.height * dpr);
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = rect.height + 'px';
+}
+window.addEventListener('resize', ()=>{ if(RACE) resizeTrackCanvas(); });
 
 function setFlagUI(){
   let overall = 'green';
@@ -853,7 +868,7 @@ function setRaceTab(t){
   document.getElementById('tabTrack').classList.toggle('active', t==='track');
   document.getElementById('towerWrap').style.display = t==='tower'?'block':'none';
   document.getElementById('trackWrap').style.display = t==='track'?'flex':'none';
-  if(t==='track') drawTrackView();
+  if(t==='track'){ resizeTrackCanvas(); drawTrackView(); }
 }
 
 function updateSpeedButtons(){
@@ -885,11 +900,10 @@ document.getElementById('speedSkip').addEventListener('click', ()=>{
   }
 });
 
-// Sim loop — runs the actual race logic at fixed wall-clock interval
 function startSimLoop(){
   stopSimLoop();
   simTimer = setInterval(()=>{
-    if(racePaused || RACE.pendingDecision || RACE.redFlagModalPending) return;
+    if(racePaused || RACE.redFlagModalPending) return;
     for(let i=0;i<raceSpeed;i++){
       if(RACE.finished) break;
       simulateLap(false);
@@ -906,8 +920,6 @@ function startSimLoop(){
 function stopSimLoop(){
   if(simTimer){ clearInterval(simTimer); simTimer = null; }
 }
-
-// Render loop — 60fps, only moves dots between sim ticks
 function startRenderLoop(){
   stopRenderLoop();
   const loop = ()=>{
@@ -927,7 +939,6 @@ function stopRenderLoop(){
 function simulateLap(silent){
   if(RACE.redFlagActive || RACE.finished) return;
 
-  // Pit timers
   RACE.drivers.forEach(d=>{
     if(d._pitTimer > 0){
       d._pitTimer--;
@@ -939,12 +950,11 @@ function simulateLap(silent){
         d._pendingRepair = 0;
         d._justPitted = true;
         d.pitFlashUntilLap = RACE.lap + 2;
-        pushMsg('pit', d.abbr, `Rejoins on ${COMPOUNDS[d.tyre].name}.`);
+        pushMsg('pit', 'PIT:', `${d.abbr} rejoins on ${COMPOUNDS[d.tyre].name}.`);
       }
     }
   });
 
-  // Execute armed pits at S/F crossing
   RACE.drivers.forEach(d=>{
     if(d._armedPit && d._pitTimer === 0) executePit(d);
   });
@@ -956,7 +966,6 @@ function simulateLap(silent){
     document.getElementById('lapNow').textContent = RACE.lap;
   }
 
-  // Sector decay
   for(let s=0;s<3;s++){
     if(RACE.sectorYellowUntil[s] && RACE.lap >= RACE.sectorYellowUntil[s]){
       if(RACE.sectors[s] === 'yellow') RACE.sectors[s] = 'green';
@@ -964,21 +973,19 @@ function simulateLap(silent){
     }
   }
 
-  // SC/VSC countdown
   if(RACE.scLapsRemaining > 0){
     RACE.scLapsRemaining--;
-    if(RACE.scLapsRemaining===0) pushMsg('flag', 'Race control', 'Green flag. Racing resumes.');
+    if(RACE.scLapsRemaining===0) pushMsg('rc', 'RC:', 'Green flag. Racing resumes.');
   }
   if(RACE.vscLapsRemaining > 0){
     RACE.vscLapsRemaining--;
-    if(RACE.vscLapsRemaining===0) pushMsg('flag', 'Race control', 'Green flag. Racing resumes.');
+    if(RACE.vscLapsRemaining===0) pushMsg('rc', 'RC:', 'Green flag. Racing resumes.');
   }
   setFlagUI();
   announceWeatherShift(wet);
 
   const active = RACE.drivers.filter(d=>!d.retired);
 
-  // Lap times
   active.forEach(d=>{
     const sectors = computeSectors(d, track, wet);
     d.lastSectors = sectors;
@@ -996,45 +1003,44 @@ function simulateLap(silent){
     if(d.penaltyFlashUntilLap && RACE.lap > d.penaltyFlashUntilLap) d.penaltyFlashUntilLap = 0;
   });
 
-  // Puncture
   active.forEach(d=>{
     const life = tyreLifePercent(d);
     if(life <= 10 && !d._puncture && !d.retired){
       if(Math.random() < 0.06){
         d._puncture = true;
-        pushMsg('danger', d.abbr, `PUNCTURE! Big time loss.`);
+        pushMsg('rc', 'RC:', `${d.abbr} PUNCTURE!`);
         if(d.teamId===STATE.myTeamId) flashBanner('Puncture!','red');
         d.totalTime += 28 + randf(-3,5);
-        if(d._pitTimer===0) executePit(d, pick(['M','H']), 0);
+        if(d._pitTimer===0){
+          const newTyre = pickAllowedCompounds(d, wet);
+          if(newTyre) executePit(d, newTyre, 0);
+        }
         if(Math.random() < 0.08) retireDriver(d, 'crash');
       }
     }
   });
 
-  // Damage DNF
   active.forEach(d=>{
     if(d.retired) return;
     if(d.damage >= 6){
       const dnfChance = d.damage >= 8 ? 0.08 : 0.04;
       if(Math.random() < dnfChance){
-        pushMsg('danger', d.abbr, `Car failure — damage terminal. OUT.`);
+        pushMsg('rc', 'RC:', `${d.abbr} car failure — OUT.`);
         if(d.teamId===STATE.myTeamId) flashBanner('Car Failure','red');
         retireDriver(d, 'mechanical');
       }
     }
   });
 
-  // Fastest lap
   const fastest = active.slice().sort((a,b)=>a.lastLapTime-b.lastLapTime)[0];
   if(fastest && (!RACE.fastestLapTime || fastest.lastLapTime < RACE.fastestLapTime)){
     RACE.fastestLapTime = fastest.lastLapTime;
     RACE.fastestLapHolder = fastest.abbr;
-    pushMsg('good', fastest.abbr, `Fastest lap of the race.`);
+    pushMsg('strat', 'STRAT:', `${fastest.abbr} fastest lap of the race.`);
   }
 
   checkIncidents(active);
 
-  // Order
   RACE.drivers.sort((a,b)=>{
     if(a.retired && !b.retired) return 1;
     if(!a.retired && b.retired) return -1;
@@ -1050,9 +1056,6 @@ function simulateLap(silent){
       d.gapToLeader = d.totalTime - leaderTime;
       d.interval = prevTime!==null ? (d.totalTime - prevTime) : 0;
       prevTime = d.totalTime;
-      // Compute race fraction for renderer interpolation
-      d._lastFrac = d._targetFrac || 0;
-      d._targetFrac = ((d.gapToLeader / LAP_TIME_APPROX) % 1 + 1) % 1;
     }
   });
 
@@ -1070,14 +1073,12 @@ function tyreLifePercent(d){
   const baseDeg = comp.degRate * 3;
   return Math.max(0, 100 - (d.tyreAge * baseDeg));
 }
-
 function carHealthPercent(d){
   return Math.max(0, 100 - (d.damage / 8) * 100);
 }
-
 function applyCarWear(d){
-  let wear = 0.15;                              // baseline
-  if(d.ers === 'attack') wear += 0.8;           // pushing hard
+  let wear = 0.15;
+  if(d.ers === 'attack') wear += 0.8;
   if(d.ers === 'save')   wear -= 0.05;
   if(d.radioEffect && d.radioEffect.paceBonus > 0) wear += 0.5;
   if(d.radioEffect && d.radioEffect.paceBonus < 0) wear -= 0.1;
@@ -1137,10 +1138,10 @@ function announceWeatherShift(wet){
   if(RACE._lastWetBand===undefined) RACE._lastWetBand = wet>0.5?'wet':(wet>0.1?'damp':'dry');
   const band = wet>0.5?'wet':(wet>0.1?'damp':'dry');
   if(band!==RACE._lastWetBand){
-    if(band==='wet'){ pushMsg('weather','Weather','Rain intensifying — track is wet.'); flashBanner('Rain Falling','yellow'); }
-    else if(band==='damp' && RACE._lastWetBand==='dry'){ pushMsg('weather','Weather','Spots of rain on track.'); flashBanner('Rain Starting','yellow'); }
-    else if(band==='damp' && RACE._lastWetBand==='wet'){ pushMsg('weather','Weather','Track beginning to dry.'); }
-    else if(band==='dry'){ pushMsg('weather','Weather','Track fully dry now.'); }
+    if(band==='wet'){ pushMsg('wu', 'WU:', `Rain intensifying — track is wet.`); flashBanner('Rain Falling','yellow'); }
+    else if(band==='damp' && RACE._lastWetBand==='dry'){ pushMsg('wu', 'WU:', `Spots of rain on track.`); flashBanner('Rain Starting','yellow'); }
+    else if(band==='damp' && RACE._lastWetBand==='wet'){ pushMsg('wu', 'WU:', `Track beginning to dry.`); }
+    else if(band==='dry'){ pushMsg('wu', 'WU:', `Track fully dry now.`); }
     RACE._lastWetBand = band;
   }
 }
@@ -1163,7 +1164,7 @@ function checkIncidents(active){
     } else if(roll < failChance + crashChance){
       if(Math.random() < 0.72){
         d.damage = clamp(d.damage + rand(1,3), 0, 8);
-        pushMsg('danger', d.abbr, `Picks up damage after contact.`);
+        pushMsg('rc', 'RC:', `${d.abbr} picks up damage after contact.`);
         if(d.teamId===STATE.myTeamId) flashBanner('Damage!','yellow');
         triggerSectorYellow();
         if(Math.random() < 0.3){
@@ -1171,7 +1172,7 @@ function checkIncidents(active){
           if(other){
             other.penaltyLapsLeft = 1;
             other.penaltyFlashUntilLap = RACE.lap + 3;
-            pushMsg('danger', other.abbr, `Given 5s penalty for causing a collision.`);
+            pushMsg('rc', 'RC:', `${other.abbr} given 5s penalty for causing a collision.`);
           }
         }
       } else {
@@ -1201,7 +1202,7 @@ function retireDriver(d, reason){
   d.retiredReason = reason;
   d.retiredLap = RACE.lap;
   const label = reason==='mechanical' ? 'retires with mechanical failure' : 'crashes out';
-  pushMsg('danger', d.abbr, `${label.charAt(0).toUpperCase()+label.slice(1)}!`);
+  pushMsg('rc', 'RC:', `${d.abbr} ${label}!`);
   if(d.teamId===STATE.myTeamId) flashBanner(reason==='crash'?'Crash!':'Mechanical','red');
   if(reason==='crash'){
     const r = Math.random();
@@ -1218,21 +1219,19 @@ function retireDriver(d, reason){
 function startVSC(){
   if(RACE.redFlagActive) return;
   RACE.vscLapsRemaining = rand(2,3);
-  pushMsg('flag', 'Race control', 'Virtual Safety Car deployed.');
+  pushMsg('rc', 'RC:', 'Virtual Safety Car deployed.');
   flashBanner('Virtual Safety Car','yellow');
   setFlagUI();
 }
 function startSafetyCar(){
   if(RACE.redFlagActive) return;
   RACE.scLapsRemaining = rand(3,5);
-  pushMsg('flag', 'Race control', 'Safety Car deployed.');
+  pushMsg('rc', 'RC:', 'Safety Car deployed.');
   flashBanner('Safety Car','yellow');
   const active = RACE.drivers.filter(d=>!d.retired).sort((a,b)=>a.position-b.position);
   if(active.length){
     const leaderTime = active[0].totalTime;
-    active.forEach((d,i)=>{
-      d.totalTime = leaderTime + i * 1.5;
-    });
+    active.forEach((d,i)=>{ d.totalTime = leaderTime + i * 1.5; });
   }
   setFlagUI();
 }
@@ -1240,7 +1239,7 @@ function startRedFlag(){
   if(RACE.redFlagActive) return;
   RACE.redFlagActive = true;
   RACE.redFlagModalPending = true;
-  pushMsg('danger', 'Race control', 'RED FLAG — session stopped.');
+  pushMsg('rc', 'RC:', 'RED FLAG — session stopped.');
   flashBanner('Red Flag','red');
   setFlagUI();
   racePaused = true; updateSpeedButtons();
@@ -1252,31 +1251,39 @@ function openRedFlagResumeModal(){
   openModal(`
     <h2 style="color:var(--red)">🔴 Red Flag</h2>
     <p>Race stopped. Choose tyres for the restart. Race resumes behind the Safety Car.</p>
-    ${myDrivers.map(d=>`
+    ${myDrivers.map(d=>{
+      const dd = RACE.drivers.find(x=>x.abbr===d.abbr);
+      return `
       <div class="driver-strat" data-abbr="${d.abbr}">
         <div class="driver-strat-name">${d.name} <span class="dim" style="font-size:11px">(${d.abbr})</span></div>
         <div class="tyre-select">
-          ${['S','M','H','I','W'].map(c=>`
-            <button class="tyre-btn rf-tyre" data-abbr="${d.abbr}" data-tyre="${c}">
+          ${['S','M','H','I','W'].map(c=>{
+            const used = dd.usedCompounds && dd.usedCompounds.has(c) && !COMPOUNDS[c].wet;
+            return `
+            <button class="tyre-btn rf-tyre" data-abbr="${d.abbr}" data-tyre="${c}" ${used?'disabled':''}>
               <span class="tyre-dot ${c}"></span>${COMPOUNDS[c].name}
-            </button>
-          `).join('')}
+              ${used?'<span class="used-tag">used</span>':''}
+            </button>`;
+          }).join('')}
         </div>
-        <div style="font-size:11px;color:var(--dim);margin-top:6px" id="rfSel-${d.abbr}">Selected: M</div>
-      </div>
-    `).join('')}
+      </div>`;
+    }).join('')}
     <div class="modal-actions"><button class="btn btn-primary" id="btnRedFlagResume">Restart race</button></div>
   `);
   const sel = {};
-  myDrivers.forEach(d=> sel[d.abbr] = 'M');
+  myDrivers.forEach(d=>{
+    const dd = RACE.drivers.find(x=>x.abbr===d.abbr);
+    sel[d.abbr] = dd.tyre;
+  });
   document.querySelectorAll('.rf-tyre').forEach(b=>b.addEventListener('click', ()=>{
+    if(b.disabled) return;
     sel[b.dataset.abbr] = b.dataset.tyre;
-    document.getElementById('rfSel-'+b.dataset.abbr).textContent = 'Selected: '+b.dataset.tyre;
   }));
   document.getElementById('btnRedFlagResume').addEventListener('click', ()=>{
     RACE.drivers.forEach(d=>{
       if(sel[d.abbr]){
         d.tyre = sel[d.abbr]; d.tyreAge = 0;
+        d.usedCompounds.add(d.tyre);
         d._puncture = false; d.pitStops++;
         d.pitHistory.push({lap:RACE.lap, tyre:d.tyre, reason:'redflag'});
       }
@@ -1288,12 +1295,26 @@ function openRedFlagResumeModal(){
     RACE.sectors = ['green','green','green'];
     racePaused = false; updateSpeedButtons();
     closeModal();
-    pushMsg('flag', 'Race control', 'Race restarts behind the Safety Car.');
+    pushMsg('rc', 'RC:', 'Race restarts behind the Safety Car.');
     setFlagUI();
   });
 }
 
-// ---- AI Pits ----
+function pickAllowedCompounds(d, wet){
+  const used = d.usedCompounds || new Set();
+  const options = [];
+  if(wet > 0.3){
+    options.push('I');
+    if(wet > 0.6) options.push('W');
+  }
+  ['S','M','H'].forEach(c=>{
+    if(!used.has(c)) options.push(c);
+  });
+  options.push('I','W');
+  const unique = [...new Set(options)];
+  return unique.length ? pick(unique) : 'W';
+}
+
 function maybeAIPitStop(d, track, wet){
   if(d.teamId===STATE.myTeamId) return;
   if(RACE.lap < 3 || d._pitTimer > 0) return;
@@ -1306,14 +1327,20 @@ function maybeAIPitStop(d, track, wet){
   const duePlanned = d.nextPitLap && RACE.lap >= d.nextPitLap && d.pitStops < (d.pitPlan==='2-stop'?2:1);
   if((track.laps-RACE.lap) < 3) return;
   if(wantsWet || wantsSlickBack || tyreWorn || duePlanned){
-    const newTyre = wantsWet ? (wet>0.6?'W':'I') : (wantsSlickBack ? pick(['M','H']) : pick(['M','H']));
+    const used = d.usedCompounds || new Set();
+    let newTyre;
+    if(wantsWet){
+      newTyre = wet>0.6?'W':'I';
+    } else {
+      const available = ['M','H','S'].filter(c=>!used.has(c));
+      newTyre = available.length ? pick(available) : (wantsSlickBack ? 'H' : 'W');
+    }
     executePit(d, newTyre, d.damage >= 3 ? Math.min(d.damage, 5) : 0);
     if(d.pitPlan==='2-stop' && d.pitStops===1) d.nextPitLap = RACE.lap + Math.round(track.laps*randf(0.25,0.4));
     else d.nextPitLap = 99999;
   }
 }
 
-// ---- Pit execution ----
 function executePit(d, newTyre, repairAmount){
   if(d._pitTimer > 0) return;
   const pitLoss = 18 + randf(0, 6);
@@ -1322,16 +1349,17 @@ function executePit(d, newTyre, repairAmount){
   d._pendingTyre = newTyre || d.tyre;
   d._pendingRepair = repairAmount || 0;
   d.pitStops++;
+  d.usedCompounds.add(d._pendingTyre);
   d.pitHistory.push({lap:RACE.lap, tyre:d._pendingTyre, repair: repairAmount||0});
   d.totalTime += pitLoss + repairTime;
-  let msg = `Pits — ${COMPOUNDS[d._pendingTyre].name}`;
+  let msg = `${d.abbr} pits — ${COMPOUNDS[d._pendingTyre].name}`;
   if(repairAmount) msg += ` + 🔧 repair`;
-  msg += ` (loss ~${(pitLoss + repairTime).toFixed(1)}s).`;
+  msg += ` (~${(pitLoss + repairTime).toFixed(1)}s)`;
   if(Math.random() < 0.15){
     d.totalTime += 1.5;
-    msg += ' Slow stop +1.5s.';
+    msg += ' · slow stop +1.5s';
   }
-  pushMsg('pit', d.abbr, msg);
+  pushMsg('pit', 'PIT:', msg);
   if(d.teamId===STATE.myTeamId) flashBanner('Box box box','blue');
   d._armedPit = false;
   d._armedTyre = null;
@@ -1343,48 +1371,54 @@ function armPit(driver, tyre, repair){
   driver._armedPit = true;
   driver._armedTyre = tyre;
   driver._armedRepair = repair || 0;
-  pushMsg('you', 'You → '+driver.name,
-    `Box this lap for ${COMPOUNDS[tyre].name}${repair?` + 🔧 repair`:''}.`);
-  setTimeout(()=>pushMsg('driver', driver.name, 'Boxing this lap.'), 400);
+  pushMsg('cmd', 'CMD:', `Box this lap — ${COMPOUNDS[tyre].name}${repair?` + 🔧 repair`:''}.`);
+  setTimeout(()=>pushMsg('driver', driver.abbr+':', 'Boxing this lap.'), 400);
 }
 function cancelPit(driver){
   if(!driver) return;
   driver._armedPit = false;
   driver._armedTyre = null;
   driver._armedRepair = 0;
-  pushMsg('you', 'You → '+driver.name, 'Cancel the pit. Stay out.');
-  setTimeout(()=>pushMsg('driver', driver.name, 'Understood, staying out.'), 400);
+  pushMsg('cmd', 'CMD:', 'Cancel the pit. Stay out.');
+  setTimeout(()=>pushMsg('driver', driver.abbr+':', 'Understood, staying out.'), 400);
 }
 
-// ---- Engineer radio ----
 function engineerSay(driver, text, key){
   const k = key || text;
   const last = driver._lastMessageLap[k] || -999;
   if(RACE.lap - last < 4) return;
   driver._lastMessageLap[k] = RACE.lap;
-  pushMsg('engineer', `ENG → ${driver.abbr}`, text);
+  pushMsg('strat', 'STRAT:', text);
   beep('radio');
 }
 
 function runEngineerRadio(){
   const mine = RACE.drivers.filter(d=> d.teamId===STATE.myTeamId && !d.retired);
-  const leader = RACE.drivers.find(d=>!d.retired);
   mine.forEach(d=>{
     const life = tyreLifePercent(d);
-    if(life < 40 && life > 25) engineerSay(d, `Tyres at ${Math.round(life)}% — plan a stop soon.`, 'tyrewarn1');
-    if(life < 25 && life > 15) engineerSay(d, `Tyres are going off, box this lap.`, 'tyrewarn2');
-    if(d.damage >= 3 && d.damage < 5) engineerSay(d, `Floor damage — we can repair at the next stop.`, 'dmgwarn1');
-    if(d.damage >= 5) engineerSay(d, `Car is heavily damaged — repair now or we risk failure.`, 'dmgwarn2');
+    if(life < 40 && life > 25) engineerSay(d, `${d.abbr}: tyres at ${Math.round(life)}% — plan a stop soon.`, 'tyrewarn1_'+d.abbr);
+    if(life < 25 && life > 15) engineerSay(d, `${d.abbr}: tyres going off, box this lap.`, 'tyrewarn2_'+d.abbr);
+    if(d.damage >= 3 && d.damage < 5) engineerSay(d, `${d.abbr}: floor damage — we can repair at the next stop.`, 'dmgwarn1_'+d.abbr);
+    if(d.damage >= 5) engineerSay(d, `${d.abbr}: car is heavily damaged — repair now or we risk failure.`, 'dmgwarn2_'+d.abbr);
     const wet = RACE.wetness[Math.min(RACE.lap, RACE.wetness.length-1)] || 0;
-    if(wet > 0.2 && !COMPOUNDS[d.tyre].wet) engineerSay(d, `It's raining — inters may be needed.`, 'rain1');
-    if(wet > 0.6 && d.tyre === 'I') engineerSay(d, `Heavy rain — full wets would be faster.`, 'rain2');
-    const ahead = RACE.drivers.find(x=>x.position === d.position - 1);
-    if(ahead && ahead._pitTimer > 0) engineerSay(d, `${ahead.abbr} has boxed — undercut chance.`, 'undercut');
-    if(d.position === 1 && leader === d) engineerSay(d, `You're leading. Manage the gap.`, 'leader');
+    if(wet > 0.2 && !COMPOUNDS[d.tyre].wet) engineerSay(d, `${d.abbr}: it's raining — inters may be needed.`, 'rain1_'+d.abbr);
+    if(wet > 0.6 && d.tyre === 'I') engineerSay(d, `${d.abbr}: heavy rain — full wets would be faster.`, 'rain2_'+d.abbr);
+    const used = d.usedCompounds || new Set();
+    const dryLeft = ['S','M','H'].filter(c=>!used.has(c));
+    if(!COMPOUNDS[d.tyre].wet){
+      if(dryLeft.length === 1) engineerSay(d, `${d.abbr}: only ${COMPOUNDS[dryLeft[0]].name} left in dry compounds.`, 'tyrecap1_'+d.abbr);
+      if(dryLeft.length === 0) engineerSay(d, `${d.abbr}: no dry compounds left — you must stay out.`, 'tyrecap0_'+d.abbr);
+    }
+    // Two-compound rule warning
+    const usedDry = ['S','M','H'].filter(c=>used.has(c));
+    const totalLaps = RACE.laps;
+    const remaining = totalLaps - RACE.lap;
+    if(usedDry.length < 2 && remaining <= 12 && RACE.wetness[Math.min(RACE.lap, RACE.wetness.length-1)] < 0.1){
+      engineerSay(d, `${d.abbr}: you must use two compounds — pit for a different tyre or face DSQ.`, 'twocomp_'+d.abbr);
+    }
   });
 }
 
-// ---- Radio from player ----
 function sendRadio(key){
   const cmd = RADIO_COMMANDS.find(c=>c.key===key);
   if(!cmd || !RACE) return;
@@ -1398,31 +1432,16 @@ function sendRadio(key){
     untilLap: RACE.lap + (cmd.effect.durationLaps || 3),
   };
   if(cmd.effect.teamOrder) driver.orders = cmd.effect.teamOrder;
-  pushMsg('you', 'You → '+driver.name, cmd.label);
-  setTimeout(()=>pushMsg('driver', driver.name, cmd.reply), 500);
+  pushMsg('cmd', 'CMD:', cmd.label);
+  setTimeout(()=>pushMsg('driver', driver.abbr+':', cmd.reply), 500);
   beep('radio');
 }
 
-// ---- Message log ----
-function msgIcon(kind){
-  return { radio:'📻', engineer:'📻', you:'📻', driver:'📻',
-           pit:'⚙', flag:'🏁', weather:'🌤', danger:'⚠', good:'✓', system:'ⓘ' }[kind] || 'ⓘ';
-}
-function msgKindClass(kind){
-  if(kind==='you') return 'you';
-  if(kind==='engineer') return 'engineer';
-  if(kind==='driver') return 'radio';
-  if(kind==='pit') return 'pit';
-  if(kind==='flag') return 'flag';
-  if(kind==='danger') return 'danger';
-  if(kind==='weather') return 'weather';
-  return '';
-}
-function pushMsg(kind, who, text){
+// ---- Messages ----
+function pushMsg(kind, tag, text){
   if(!RACE) return;
   const lap = RACE.lap;
-  const ts = formatClock(Date.now());
-  const entry = { kind, who, text, lap, ts };
+  const entry = { kind, tag, text, lap };
   RACE.messages.push(entry);
   RACE.unreadCount = (RACE.unreadCount || 0) + 1;
   renderRibbon();
@@ -1431,33 +1450,27 @@ function renderRibbon(){
   if(!RACE) return;
   const last = RACE.messages[RACE.messages.length-1];
   const rib = document.getElementById('msgRibbon');
+  const txt = document.getElementById('ribbonText');
   if(!last){
-    document.getElementById('ribbonText').textContent = 'Race feed initialising…';
-    document.getElementById('ribbonIcon').textContent = 'ⓘ';
-    document.getElementById('ribbonLap').textContent = 'L0';
-    document.getElementById('ribbonTime').textContent = '--:--';
+    txt.innerHTML = 'Race feed initialising…';
     document.getElementById('ribbonPips').innerHTML = '';
     return;
   }
-  document.getElementById('ribbonIcon').textContent = msgIcon(last.kind);
-  document.getElementById('ribbonLap').textContent = `L${last.lap}`;
-  document.getElementById('ribbonTime').textContent = last.ts;
-  const txt = document.getElementById('ribbonText');
-  txt.innerHTML = `<b>${last.who}:</b> ${last.text}`;
-  // Pips
+  const cls = {
+    strat:'ribbon-strat', rc:'ribbon-rc', wu:'ribbon-wu',
+    pit:'ribbon-pit', cmd:'ribbon-cmd', driver:'ribbon-driver'
+  }[last.kind] || 'ribbon-strat';
+  txt.innerHTML = `<span class="${cls}">${last.tag}</span> ${last.text}`;
   const pips = [];
-  // Upcoming rain in 5 laps
   if(RACE.wetness){
+    const cur = RACE.wetness[Math.min(RACE.lap, RACE.wetness.length-1)] || 0;
     for(let i=1;i<=5;i++){
       const wi = RACE.wetness[Math.min(RACE.lap+i, RACE.wetness.length-1)] || 0;
-      const current = RACE.wetness[Math.min(RACE.lap, RACE.wetness.length-1)] || 0;
-      if(wi > current + 0.15){ pips.push('<span class="pip">🌧</span>'); break; }
+      if(wi > cur + 0.15){ pips.push('<span class="pip">🌧</span>'); break; }
     }
   }
-  // Flag pips
   if(RACE.scLapsRemaining>0) pips.push('<span class="pip" style="color:var(--amber)">🏁</span>');
   if(RACE.vscLapsRemaining>0) pips.push('<span class="pip" style="color:var(--amber)">🏁</span>');
-  // Unread
   if(RACE.unreadCount > 0) pips.push(`<span class="pip unread">● ${RACE.unreadCount}</span>`);
   document.getElementById('ribbonPips').innerHTML = pips.join('');
   rib.classList.remove('flash');
@@ -1466,16 +1479,14 @@ function renderRibbon(){
 }
 
 document.getElementById('msgRibbon').addEventListener('click', openMessageLog);
-
 function openMessageLog(){
   if(!RACE) return;
   RACE.unreadCount = 0;
   renderRibbon();
   const rows = RACE.messages.map(m=>`
-    <div class="msg-log-row ${msgKindClass(m.kind)}">
-      <span class="msg-log-time">L${m.lap} · ${m.ts}</span>
-      <span class="msg-log-icon">${msgIcon(m.kind)}</span>
-      <span class="msg-log-text"><b>${m.who}:</b> ${m.text}</span>
+    <div class="msg-log-row ${m.kind}">
+      <span class="msg-tag">${m.tag}</span>
+      <span class="msg-log-text">${m.text}</span>
     </div>
   `).join('');
   openModal(`
@@ -1488,7 +1499,7 @@ function openMessageLog(){
   `);
   document.getElementById('btnCloseMsg').addEventListener('click', closeModal);
   document.getElementById('btnExportMsg').addEventListener('click', ()=>{
-    const txt = RACE.messages.map(m=>`L${m.lap} ${m.ts} ${m.who}: ${m.text}`).join('\n');
+    const txt = RACE.messages.map(m=>`${m.tag} ${m.text}`).join('\n');
     navigator.clipboard?.writeText(txt).then(()=>{
       const b = document.getElementById('btnExportMsg');
       b.textContent = 'Copied!';
@@ -1503,29 +1514,29 @@ function openPitMenu(driver){
   if(driver._armedPit){ cancelPit(driver); renderTower(); return; }
   const life = Math.round(tyreLifePercent(driver));
   const health = Math.round(carHealthPercent(driver));
-  const tyreOpts = ['S','M','H','I','W'];
+  const used = driver.usedCompounds || new Set();
+  const currentWet = COMPOUNDS[driver.tyre].wet;
+  const compounds = ['S','M','H','I','W'];
   openModal(`
     <h2>Pit call — ${driver.name}</h2>
     <p style="font-size:12px">Current: ${COMPOUNDS[driver.tyre].name} · Tyres ${life}% · Car ${health}%</p>
     <div style="font-size:11.5px;color:var(--dim);margin:14px 0 4px">New tyres</div>
     <div class="tyre-select" id="pitTyreRow">
-      ${tyreOpts.map(c=>`
-        <button class="tyre-btn pit-tyre ${c===driver.tyre?'active':''}" data-tyre="${c}">
+      ${compounds.map(c=>{
+        const isUsed = used.has(c) && !COMPOUNDS[c].wet;
+        const disabled = isUsed && c !== driver.tyre;
+        return `
+        <button class="tyre-btn pit-tyre ${c===driver.tyre?'active':''}" data-tyre="${c}" ${disabled?'disabled':''}>
           <span class="tyre-dot ${c}"></span>${COMPOUNDS[c].name}
-        </button>
-      `).join('')}
+          ${isUsed?'<span class="used-tag">used</span>':''}
+        </button>`;
+      }).join('')}
     </div>
     <div style="font-size:11.5px;color:var(--dim);margin:14px 0 4px">Repairs (optional)</div>
     <div class="tyre-select" id="pitRepairRow">
-      <button class="tyre-btn pit-repair active" data-repair="0">
-        <span class="spanner">🔧</span>No repair
-      </button>
-      <button class="tyre-btn pit-repair" data-repair="2" ${driver.damage < 1 ? 'disabled' : ''}>
-        <span class="spanner">🔧</span>Minor (2 · +12s)
-      </button>
-      <button class="tyre-btn pit-repair" data-repair="5" ${driver.damage < 3 ? 'disabled' : ''}>
-        <span class="spanner">🔧</span>Major (5 · +30s)
-      </button>
+      <button class="tyre-btn pit-repair active" data-repair="0"><span class="spanner">🔧</span>None</button>
+      <button class="tyre-btn pit-repair" data-repair="2" ${driver.damage < 1 ? 'disabled' : ''}><span class="spanner">🔧</span>Minor +12s</button>
+      <button class="tyre-btn pit-repair" data-repair="5" ${driver.damage < 3 ? 'disabled' : ''}><span class="spanner">🔧</span>Major +30s</button>
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost btn-sm" id="btnPitCancel">Cancel</button>
@@ -1535,11 +1546,13 @@ function openPitMenu(driver){
   let chosenTyre = driver.tyre;
   let chosenRepair = 0;
   document.querySelectorAll('.pit-tyre').forEach(b=>b.addEventListener('click', ()=>{
+    if(b.disabled) return;
     chosenTyre = b.dataset.tyre;
     document.querySelectorAll('.pit-tyre').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
   }));
   document.querySelectorAll('.pit-repair').forEach(b=>b.addEventListener('click', ()=>{
+    if(b.disabled) return;
     chosenRepair = parseInt(b.dataset.repair);
     document.querySelectorAll('.pit-repair').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
@@ -1552,9 +1565,76 @@ function openPitMenu(driver){
   });
 }
 
-// ---- Rendering ----
-function barColor(pct){
-  return pct > 70 ? 'var(--green)' : pct > 40 ? 'var(--amber)' : 'var(--red)';
+// ---- SVG: tyre circle with diminishing wipe ----
+function tyreSvg(compound, lifePct){
+  // Colour of the wipe: compound colour at high life, amber mid, red low
+  let fillColor;
+  if(lifePct > 55) fillColor = compoundColor(compound);
+  else if(lifePct > 25) fillColor = '#E8A93A';
+  else fillColor = '#C4453D';
+
+  // Pie slice path: 100% = full circle, 0% = nothing
+  const size = 22;
+  const cx = size/2, cy = size/2, r = 8;
+  const pct = clamp(lifePct, 0, 100) / 100;
+  const angle = pct * Math.PI * 2;
+
+  let path = '';
+  if(pct >= 0.999){
+    // Full circle
+    path = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fillColor}"/>`;
+  } else if(pct <= 0.001){
+    path = '';
+  } else {
+    // Pie from 12 o'clock, clockwise
+    const startAngle = -Math.PI/2;
+    const endAngle = startAngle + angle;
+    const x1 = cx + r * Math.cos(startAngle);
+    const y1 = cy + r * Math.sin(startAngle);
+    const x2 = cx + r * Math.cos(endAngle);
+    const y2 = cy + r * Math.sin(endAngle);
+    const largeArc = angle > Math.PI ? 1 : 0;
+    path = `<path d="M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z" fill="${fillColor}"/>`;
+  }
+
+  // Text colour: contrast against fill
+  const textColor = (lifePct > 25) ? '#0B0D10' : '#EDEAE2';
+
+  return `<span class="tyre-svg-wrap">
+    <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="#0a0d14" stroke="#2A2F38" stroke-width="1.5"/>
+      ${path}
+      <text x="${cx}" y="${cy + 4}" text-anchor="middle" font-family="JetBrains Mono, monospace"
+        font-size="10" font-weight="700" fill="${textColor}">${compound}</text>
+    </svg>
+  </span>`;
+}
+function compoundColor(c){
+  return { S:'#ef4444', M:'#fbbf24', H:'#e5e7eb', I:'#22c55e', W:'#3b82f6' }[c] || '#e5e7eb';
+}
+
+// ---- SVG: car health triangle ----
+function healthTriangleSvg(damage){
+  // 0 = outline only, 8 = fully red
+  const pct = clamp(damage / 8, 0, 1);
+  const size = 22;
+  const col = damage >= 6 ? 'var(--red)' : damage >= 4 ? 'var(--amber)' : 'var(--green)';
+  const fillY = 19 - (17 * pct); // triangle spans y=2..19 (roughly)
+
+  // Clip a rectangle over the triangle to fill from bottom up
+  const clipId = 'hc_'+Math.random().toString(36).slice(2,8);
+  return `<span class="health-triangle">
+    <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+      <defs>
+        <clipPath id="${clipId}">
+          <polygon points="11,2 20,20 2,20"/>
+        </clipPath>
+      </defs>
+      <polygon points="11,2 20,20 2,20" fill="#0a0d14" stroke="#2A2F38" stroke-width="1.5"/>
+      ${pct > 0 ? `<rect x="0" y="${fillY}" width="${size}" height="${size}" fill="${col}" clip-path="url(#${clipId})"/>` : ''}
+      <polygon points="11,2 20,20 2,20" fill="none" stroke="#2A2F38" stroke-width="1.5"/>
+    </svg>
+  </span>`;
 }
 
 function renderTower(){
@@ -1572,45 +1652,40 @@ function renderTower(){
     row.className = cls;
 
     const crown = (RACE.fastestLapHolder===d.abbr) ? ' <span class="crown">♛</span>' : '';
-    const gapText = d.retired ? (d.retiredReason==='crash'?'DNF-CR':'DNF-MEC') :
-      (d.position===1 ? 'LEADER' : '+'+d.interval.toFixed(1)+'s');
+    const gapText = d.retired
+      ? (d.retiredReason==='crash'?'DNF-CR':'DNF-MEC')
+      : (d.position===1 ? 'LEADER' : '+'+d.interval.toFixed(1)+'s');
     const life = d.retired ? 0 : Math.round(tyreLifePercent(d));
-    const health = d.retired ? 0 : Math.round(carHealthPercent(d));
-    const tyreColor = barColor(life);
-    const healthColor = barColor(health);
     const isMine = d.teamId===STATE.myTeamId;
+
     const inPit = d._pitTimer > 0 ? '<span class="in-pit-indicator">◉</span>' : '';
-    const pitBtnClass = d._armedPit ? 'pit-btn-armed' : 'pit-btn-idle';
-    const pitBtnLabel = d._armedPit ? 'BOX' : 'PIT';
-    const pitBtn = isMine
-      ? `<button class="pit-btn ${pitBtnClass}" data-pit-abbr="${d.abbr}">${pitBtnLabel}</button>`
-      : '';
-    const radioBtn = isMine
-      ? `<button class="radio-btn" data-radio-abbr="${d.abbr}" title="Radio">
-           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-             <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
-             <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
-           </svg>
-         </button>`
-      : '';
+
+    let actionHtml = '';
+    if(isMine){
+      const pitBtnClass = d._armedPit ? 'pit-btn-armed' : 'pit-btn-idle';
+      const pitBtnLabel = d._armedPit ? 'BOX' : 'PIT';
+      actionHtml = `
+        <button class="radio-btn" data-radio-abbr="${d.abbr}" title="Radio">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
+            <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
+          </svg>
+        </button>
+        <button class="pit-btn ${pitBtnClass}" data-pit-abbr="${d.abbr}">${pitBtnLabel}</button>
+      `;
+    }
 
     row.innerHTML = `
       <span class="tt-pos">${d.position}</span>
       <span class="tt-driver"><span class="tt-team-pill" style="background:${team.color}"></span><span class="tt-driver-abbr">${d.abbr}</span>${crown}</span>
       <span class="tt-gap">${gapText}</span>
-      <span class="tt-pitcol">${inPit}</span>
+      <span class="tt-action">${actionHtml}</span>
       <span class="tt-bars">
-        <div class="tt-bar-row">
-          <span class="tt-bar-label">${d.tyre} ${life}%</span>
-          <div class="tt-bar-track"><div class="tt-bar-fill" style="width:${life}%;background:${tyreColor}"></div></div>
-        </div>
-        <div class="tt-bar-row">
-          <span class="tt-bar-label">CAR ${health}%</span>
-          <div class="tt-bar-track"><div class="tt-bar-fill" style="width:${health}%;background:${healthColor}"></div></div>
-        </div>
+        ${d.retired ? '' : tyreSvg(d.tyre, life)}
+        ${d.retired ? '' : healthTriangleSvg(d.damage)}
       </span>
+      <span class="tt-pitcol">${inPit}</span>
       <span class="tt-pits">${d.pitStops}</span>
-      <span class="tt-action">${radioBtn}${pitBtn}</span>
     `;
     row.addEventListener('click', (e)=>{
       if(e.target.closest('.pit-btn') || e.target.closest('.radio-btn')) return;
@@ -1638,15 +1713,13 @@ function openDriverDetail(d){
   const comp = COMPOUNDS[d.tyre];
   const life = Math.round(tyreLifePercent(d));
   const health = Math.round(carHealthPercent(d));
-  const tyreColor = barColor(life);
-  const healthColor = barColor(health);
   const gapAhead = d.position>1 ? (()=>{
     const ahead = RACE.drivers.find(x=>x.position === d.position-1);
     return ahead && !ahead.retired ? (d.totalTime - ahead.totalTime) : 0;
   })() : 0;
   const behind = RACE.drivers.find(x=>x.position === d.position+1);
   const gapBehind = behind && !behind.retired ? (behind.totalTime - d.totalTime) : 0;
-  const pitHistory = d.pitHistory.length ? d.pitHistory.map(p=>`L${p.lap} → ${p.tyre}${p.repair?` 🔧${p.repair}`:''}${p.forced?' (puncture)':''}`).join('<br>') : 'No stops yet';
+  const pitHistory = d.pitHistory.length ? d.pitHistory.map(p=>`L${p.lap} → ${p.tyre}${p.repair?` 🔧${p.repair}`:''}`).join('<br>') : 'No stops yet';
 
   const fieldBest = [0,1,2].map(i=> Math.min(...RACE.drivers.filter(x=>!x.retired).map(x=>x.bestSector[i]||999)));
   const sectorColour = (i)=>{
@@ -1674,20 +1747,10 @@ function openDriverDetail(d){
         <div class="dd-cell"><div class="l">Gap to leader</div><div class="v">${d.position===1?'—':'+'+d.gapToLeader.toFixed(1)+'s'}</div></div>
         <div class="dd-cell"><div class="l">Ahead</div><div class="v">${d.position>1?'+'+gapAhead.toFixed(1)+'s':'—'}</div></div>
         <div class="dd-cell"><div class="l">Behind</div><div class="v">${behind?'-'+gapBehind.toFixed(1)+'s':'—'}</div></div>
-        <div class="dd-cell"><div class="l">Tyre</div><div class="v">${comp.name} · ${d.tyreAge}L</div></div>
+        <div class="dd-cell"><div class="l">Tyre</div><div class="v">${comp.name} · ${d.tyreAge}L · ${life}%</div></div>
         <div class="dd-cell"><div class="l">Fuel</div><div class="v">${Math.round(d.fuel)}%</div></div>
-        <div class="dd-cell"><div class="l">Car health</div><div class="v" style="color:${healthColor}">${health}%</div></div>
+        <div class="dd-cell"><div class="l">Car health</div><div class="v">${health}%</div></div>
         <div class="dd-cell"><div class="l">Pit stops</div><div class="v">${d.pitStops}</div></div>
-      </div>
-
-      <div>
-        <div style="font-size:11px;color:var(--dim);margin-bottom:4px">Tyre life</div>
-        <div class="dd-bar"><div class="dd-bar-fill" style="width:${life}%;background:${tyreColor}"></div></div>
-      </div>
-
-      <div>
-        <div style="font-size:11px;color:var(--dim);margin-bottom:4px">Car health</div>
-        <div class="dd-bar"><div class="dd-bar-fill" style="width:${health}%;background:${healthColor}"></div></div>
       </div>
 
       <div>
@@ -1730,77 +1793,84 @@ function openDriverDetail(d){
   }));
 }
 
-// ---- Track view: rectangular S, double-line sectors, anti-clockwise, pit box ----
+// ---- Track view: S-shape, both lines used, live position ----
 function drawTrackView(){
   const canvas = document.getElementById('trackCanvas');
   if(!canvas || !RACE) return;
   const ctx = canvas.getContext('2d');
-  const w = canvas.width, h = canvas.height;
-  ctx.clearRect(0,0,w,h);
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.width / dpr;
+  const h = canvas.height / dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
 
-  const pad = 40;
-  const rowH = (h - pad*2) / 7.2;      // 3 sectors × 2 lines = 6 rows + pit box + small gap
-  const barW = w - pad*2;
+  const pad = 28;
+  const usableH = h - pad * 2;
+  // 3 sectors, each with 2 lines + a small gap = 6 visual rows + pit box row
+  const rowH = usableH / 7.4;
+  const barW = w - pad * 2;
 
-  const sectorY = {
-    3: pad,                             // top sector top line
-    2: pad + rowH * 2.2,                // middle sector top line
-    1: pad + rowH * 4.4,                // bottom sector top line
+  // Y coordinates for each sector's top and bottom line
+  const sectorsY = {
+    3: { top: pad,              bot: pad + rowH * 0.65 },           // Sector 3 (top of screen)
+    2: { top: pad + rowH * 2.2, bot: pad + rowH * 2.85 },           // Sector 2 (middle)
+    1: { top: pad + rowH * 4.4, bot: pad + rowH * 5.05 },           // Sector 1 (bottom of screen)
   };
-  const pitY = pad + rowH * 6.6;
+  const pitY = pad + rowH * 6.5;
 
   const sectorColors = { green:'#2f7a4a', yellow:'#c9922a', red:'#a13b34' };
 
-  const drawSector = (num, topY)=>{
+  const drawSectorBand = (num)=>{
+    const { top: topY, bot: botY } = sectorsY[num];
     const flag = RACE.sectors[num-1] || 'green';
     const color = sectorColors[flag] || sectorColors.green;
 
-    // Top line (out-bound)
+    // Top line
     ctx.strokeStyle = color;
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 3;
     ctx.lineCap = 'round';
     ctx.beginPath();
     ctx.moveTo(pad, topY);
     ctx.lineTo(pad + barW, topY);
     ctx.stroke();
 
-    // Direction arrow on top line: left → right
-    drawArrow(ctx, pad + barW/2, topY - 8, 'right', color);
+    // Arrow L→R on top line
+    drawArrow(ctx, pad + barW/2, topY - 10, 'right', color);
 
-    // Bottom line (return) — offset by rowH * 0.6
-    const botY = topY + rowH * 0.62;
+    // Bottom line
     ctx.beginPath();
     ctx.moveTo(pad, botY);
     ctx.lineTo(pad + barW, botY);
     ctx.stroke();
+
+    // Arrow R→L on bottom line
     drawArrow(ctx, pad + barW/2, botY + 14, 'left', color);
 
     // Sector label
-    ctx.fillStyle = 'var(--dim)';
     ctx.fillStyle = '#8B92A0';
     ctx.font = 'bold 11px JetBrains Mono, monospace';
     ctx.fillText(`SECTOR ${num}`, pad, topY - 12);
 
-    // Flag text on right
+    // Flag label right
     ctx.fillStyle = color;
     ctx.font = 'bold 10px JetBrains Mono, monospace';
-    ctx.fillText(flag.toUpperCase(), pad + barW - 60, topY - 12);
-
-    return { topY, botY };
+    const label = flag.toUpperCase();
+    const labelW = ctx.measureText(label).width;
+    ctx.fillText(label, pad + barW - labelW, topY - 12);
   };
 
-  const band3 = drawSector(3, sectorY[3]);
-  const band2 = drawSector(2, sectorY[2]);
-  const band1 = drawSector(1, sectorY[1]);
+  drawSectorBand(3);
+  drawSectorBand(2);
+  drawSectorBand(1);
 
-  // S/F marker (bottom-right of sector 1)
+  // S/F marker (right end of Sector 1)
   const sfX = pad + barW;
-  const sfY = band1.botY;
+  const sfY = sectorsY[1].bot;
   ctx.fillStyle = '#EDEAE2';
   ctx.beginPath(); ctx.arc(sfX, sfY, 5, 0, Math.PI*2); ctx.fill();
   ctx.font = 'bold 10px JetBrains Mono, monospace';
   ctx.fillStyle = '#EDEAE2';
-  ctx.fillText('S/F', sfX + 10, sfY + 4);
+  ctx.fillText('S/F', sfX - 26, sfY + 4);
 
   // Pit box row
   ctx.strokeStyle = '#2A2F38';
@@ -1815,86 +1885,87 @@ function drawTrackView(){
   ctx.font = 'bold 10px JetBrains Mono, monospace';
   ctx.fillText('PIT BOX', pad, pitY - 6);
 
-  // Position calculations
+  // Sort active by position
   const active = RACE.drivers.filter(d=>!d.retired);
   if(active.length === 0) return;
 
-  const now = performance.now();
-  const simFrac = Math.min(1, (now - lastSimTime) / simIntervalMs) * (racePaused ? 0 : 1);
+  const leader = active.reduce((a,b)=> a.totalTime < b.totalTime ? a : b);
 
+  // Draw each car
   active.forEach(d=>{
+    // Pitting cars go in pit box
     if(d._pitTimer > 0){
-      // Draw in pit box
-      const idx = RACE.drivers.filter(x=>x._pitTimer>0).indexOf(d);
-      const px = pad + 20 + idx * 80;
-      const py = pitY + 18;
+      const pitting = RACE.drivers.filter(x=>x._pitTimer>0);
+      const idx = pitting.indexOf(d);
+      const px = pad + 30 + idx * 90;
+      const py = pitY + 22;
       ctx.fillStyle = teamById(d.teamId).color;
       ctx.beginPath(); ctx.arc(px, py, 7, 0, Math.PI*2); ctx.fill();
       ctx.strokeStyle = '#60a5fa'; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(px, py, 10, 0, Math.PI*2); ctx.stroke();
       ctx.fillStyle = '#EDEAE2';
-      ctx.font = '10px JetBrains Mono, monospace';
-      ctx.fillText(`${d.abbr} ${d._pendingTyre||d.tyre}`, px + 14, py + 4);
+      ctx.font = 'bold 11px JetBrains Mono, monospace';
+      ctx.fillText(`${d.abbr} · ${d.tyre}`, px + 14, py + 4);
       return;
     }
 
-    // Interpolated fraction 0..1
-    let f0 = d._lastFrac || 0;
-    let f1 = d._targetFrac != null ? d._targetFrac : f0;
-    let delta = f1 - f0;
-    if(delta < -0.5) delta += 1;
-    if(delta > 0.5) delta -= 1;
-    let frac = ((f0 + delta * simFrac) % 1 + 1) % 1;
+    // Race fraction from gapToLeader (fresh every frame)
+    const gap = d.totalTime - leader.totalTime;
+    const frac = ((gap / LAP_TIME_APPROX) % 1 + 1) % 1;
 
-    // frac: 0..1 across the whole lap. We'll map:
-    // 0.00–0.333 → Sector 1 (bottom band), top line then bottom line
-    // 0.333–0.666 → Sector 2 (middle band)
-    // 0.666–1.00 → Sector 3 (top band)
-    let band, intra;
-    if(frac < 0.333){
-      band = band1; intra = frac / 0.333;
-    } else if(frac < 0.666){
-      band = band2; intra = (frac - 0.333) / 0.333;
+    // Which sector (1, 2, or 3)
+    let sectorNum, intra;
+    if(frac < 1/3){
+      sectorNum = 1;
+      intra = frac / (1/3);
+    } else if(frac < 2/3){
+      sectorNum = 2;
+      intra = (frac - 1/3) / (1/3);
     } else {
-      band = band3; intra = (frac - 0.666) / 0.334;
+      sectorNum = 3;
+      intra = (frac - 2/3) / (1/3);
     }
 
-    // Half-sector switch: first half top line L→R, second half bottom line R→L
+    const band = sectorsY[sectorNum];
+    // First half of sector: top line L→R
+    // Second half of sector: bottom line R→L
     let x, y;
     if(intra < 0.5){
       x = pad + (intra / 0.5) * barW;
-      y = band.topY;
+      y = band.top;
     } else {
       x = pad + barW - ((intra - 0.5) / 0.5) * barW;
-      y = band.botY;
+      y = band.bot;
     }
 
-    const team = teamById(d.teamId);
-    ctx.beginPath();
-    ctx.arc(x, y, d.teamId===STATE.myTeamId?8:6, 0, Math.PI*2);
-    ctx.fillStyle = team.color;
-    ctx.fill();
-    if(d.teamId===STATE.myTeamId){ ctx.strokeStyle='#fff'; ctx.lineWidth=1.6; ctx.stroke(); }
+    const isMine = d.teamId === STATE.myTeamId;
 
-    // Tyre ring
+    // Car dot
     ctx.beginPath();
-    ctx.arc(x, y, d.teamId===STATE.myTeamId?11:9, 0, Math.PI*2);
-    ctx.strokeStyle = { S:'#ef4444', M:'#fbbf24', H:'#e5e7eb', I:'#22c55e', W:'#3b82f6' }[d.tyre];
-    ctx.lineWidth = 1.6;
+    ctx.arc(x, y, isMine ? 9 : 7, 0, Math.PI*2);
+    ctx.fillStyle = teamById(d.teamId).color;
+    ctx.fill();
+    if(isMine){ ctx.strokeStyle='#fff'; ctx.lineWidth = 1.6; ctx.stroke(); }
+
+    // Tyre ring around the car
+    ctx.beginPath();
+    ctx.arc(x, y, isMine ? 13 : 11, 0, Math.PI*2);
+    ctx.strokeStyle = compoundColor(d.tyre);
+    ctx.lineWidth = 2;
     ctx.stroke();
 
     // Label
     ctx.fillStyle = '#EDEAE2';
-    ctx.font = '10px JetBrains Mono, monospace';
-    ctx.fillText(d.abbr, x + 12, y + 3);
+    ctx.font = 'bold 13px JetBrains Mono, monospace';
+    ctx.fillText(d.abbr, x + (isMine ? 16 : 14), y + 4);
 
-    // Armed indicator
+    // Armed indicator (green triangle above)
     if(d._armedPit){
       ctx.fillStyle = '#5FB878';
       ctx.beginPath();
-      ctx.moveTo(x, y - 20);
-      ctx.lineTo(x + 5, y - 15);
-      ctx.lineTo(x - 5, y - 15);
+      ctx.moveTo(x, y - 22);
+      ctx.lineTo(x + 6, y - 16);
+      ctx.lineTo(x - 6, y - 16);
       ctx.closePath();
       ctx.fill();
     }
@@ -1903,7 +1974,7 @@ function drawTrackView(){
     if(d.damage >= 5){
       ctx.fillStyle = '#C4453D';
       ctx.beginPath();
-      ctx.arc(x - 12, y - 10, 4, 0, Math.PI*2);
+      ctx.arc(x - 14, y - 12, 4, 0, Math.PI*2);
       ctx.fill();
     }
   });
@@ -1911,20 +1982,20 @@ function drawTrackView(){
   // Header
   ctx.fillStyle = '#565D6A';
   ctx.font = '11px JetBrains Mono, monospace';
-  ctx.fillText(`${RACE.track.name} — Lap ${RACE.lap}/${RACE.laps}`, pad, h - 12);
+  ctx.fillText(`${RACE.track.name} — Lap ${RACE.lap}/${RACE.laps}`, pad, h - 8);
 }
 
 function drawArrow(ctx, x, y, dir, color){
   ctx.fillStyle = color;
   ctx.beginPath();
   if(dir === 'right'){
-    ctx.moveTo(x + 6, y);
-    ctx.lineTo(x - 4, y - 5);
-    ctx.lineTo(x - 4, y + 5);
+    ctx.moveTo(x + 7, y);
+    ctx.lineTo(x - 5, y - 6);
+    ctx.lineTo(x - 5, y + 6);
   } else {
-    ctx.moveTo(x - 6, y);
-    ctx.lineTo(x + 4, y - 5);
-    ctx.lineTo(x + 4, y + 5);
+    ctx.moveTo(x - 7, y);
+    ctx.lineTo(x + 5, y - 6);
+    ctx.lineTo(x + 5, y + 6);
   }
   ctx.closePath();
   ctx.fill();
@@ -1936,28 +2007,40 @@ function finishRace(){
   const el = document.getElementById('flagIndicator');
   el.className = 'flag-indicator flag-checkered';
   el.textContent = 'Finished';
-  pushMsg('flag', 'Race control', 'Chequered flag.');
+  pushMsg('rc', 'RC:', 'Chequered flag.');
 }
 
 function showRaceResults(){
   stopSimLoop();
   stopRenderLoop();
 
-  const classified = RACE.drivers.filter(d=>!d.retired);
+  // Two-compound rule check
+  RACE.drivers.forEach(d=>{
+    if(d.retired) return;
+    const usedDry = ['S','M','H'].filter(c=>d.usedCompounds.has(c));
+    if(usedDry.length < 2){
+      d.dsq = true;
+      d.dsqReason = 'Only 1 dry compound used';
+      pushMsg('rc', 'RC:', `${d.abbr} DISQUALIFIED — must use 2 different dry compounds.`);
+    }
+  });
+
+  const classified = RACE.drivers.filter(d=>!d.retired && !d.dsq);
   const dnfs = RACE.drivers.filter(d=>d.retired);
-  const results = [...classified, ...dnfs];
+  const dsqs = RACE.drivers.filter(d=>d.dsq);
+  const results = [...classified, ...dnfs, ...dsqs];
 
   let myPrize = 0;
   const myResults = [];
   results.forEach((d,i)=>{
-    const pts = i<POINTS_TABLE.length && !d.retired ? POINTS_TABLE[i] : 0;
+    const pts = i<POINTS_TABLE.length && !d.retired && !d.dsq ? POINTS_TABLE[i] : 0;
     STATE.driversPoints[d.abbr] = (STATE.driversPoints[d.abbr]||0) + pts;
     STATE.constructorsPoints[d.teamId] = (STATE.constructorsPoints[d.teamId]||0) + pts;
     if(!STATE.form[d.abbr]) STATE.form[d.abbr] = { pointsThisSeason:0, raceWins:0, qualiWins:0 };
     STATE.form[d.abbr].pointsThisSeason = (STATE.form[d.abbr].pointsThisSeason||0) + pts;
     if(d.teamId===STATE.myTeamId){
       myPrize += PRIZE_BY_POS[i] || PRIZE_BY_POS[PRIZE_BY_POS.length-1];
-      myResults.push({abbr:d.abbr, name:d.name, pos:i+1, retired:d.retired});
+      myResults.push({abbr:d.abbr, name:d.name, pos:i+1, retired:d.retired, dsq:d.dsq});
     }
   });
 
@@ -1965,19 +2048,15 @@ function showRaceResults(){
   const [d1, d2] = t.drivers;
   const p1 = RACE.drivers.find(x=>x.abbr===d1.abbr);
   const p2 = RACE.drivers.find(x=>x.abbr===d2.abbr);
-  if(p1 && p2 && !p1.retired && !p2.retired){
-    if(p1.position < p2.position){
-      if(!STATE.form[d1.abbr]) STATE.form[d1.abbr] = { pointsThisSeason:0, raceWins:0, qualiWins:0 };
-      STATE.form[d1.abbr].raceWins = (STATE.form[d1.abbr].raceWins||0)+1;
-    } else {
-      if(!STATE.form[d2.abbr]) STATE.form[d2.abbr] = { pointsThisSeason:0, raceWins:0, qualiWins:0 };
-      STATE.form[d2.abbr].raceWins = (STATE.form[d2.abbr].raceWins||0)+1;
-    }
+  if(p1 && p2 && !p1.retired && !p2.retired && !p1.dsq && !p2.dsq){
+    const w = p1.position < p2.position ? d1 : d2;
+    if(!STATE.form[w.abbr]) STATE.form[w.abbr] = { pointsThisSeason:0, raceWins:0, qualiWins:0 };
+    STATE.form[w.abbr].raceWins = (STATE.form[w.abbr].raceWins||0)+1;
   }
 
   if(RACE.fastestLapHolder){
     const fl = RACE.drivers.find(d=>d.abbr===RACE.fastestLapHolder);
-    if(fl && !fl.retired && fl.position <= 10){
+    if(fl && !fl.retired && !fl.dsq && fl.position <= 10){
       STATE.driversPoints[fl.abbr] = (STATE.driversPoints[fl.abbr]||0) + 1;
       STATE.constructorsPoints[fl.teamId] = (STATE.constructorsPoints[fl.teamId]||0) + 1;
     }
@@ -1987,10 +2066,10 @@ function showRaceResults(){
     season: STATE.season,
     round: STATE.round+1,
     track: RACE.track.id,
-    results: results.map((d,i)=>({abbr:d.abbr, pos:i+1, retired:d.retired})),
+    results: results.map((d,i)=>({abbr:d.abbr, pos:i+1, retired:d.retired, dsq:d.dsq})),
   });
 
-  const bestPos = myResults.filter(r=>!r.retired).sort((a,b)=>a.pos-b.pos)[0]?.pos || 20;
+  const bestPos = myResults.filter(r=>!r.retired && !r.dsq).sort((a,b)=>a.pos-b.pos)[0]?.pos || 20;
   const expected = { title:3, contender:6, midfield:9, backmarker:12 }[myTeam().tier];
   const delta = clamp((expected - bestPos) * 1.2, -12, 14);
   STATE.boardConf = clamp(STATE.boardConf + delta, 0, 100);
@@ -2008,8 +2087,10 @@ function showRaceResults(){
 function renderResultsModal(results, myResults, myPrize, delta){
   const rows = results.map((d,i)=>{
     const t = teamById(d.teamId);
-    const statusText = d.retired ? (d.retiredReason==='crash'?'DNF (crash)':'DNF (mec)') : `P${i+1}`;
-    const pts = i<POINTS_TABLE.length && !d.retired ? POINTS_TABLE[i] : 0;
+    const statusText = d.retired ? (d.retiredReason==='crash'?'DNF (crash)':'DNF (mec)')
+                      : d.dsq ? 'DSQ'
+                      : `P${i+1}`;
+    const pts = i<POINTS_TABLE.length && !d.retired && !d.dsq ? POINTS_TABLE[i] : 0;
     const crown = (RACE.fastestLapHolder===d.abbr) ? ' ♛' : '';
     return `<div class="side-row" style="border-bottom:1px solid var(--line);padding:7px 0;">
       <span><span class="team-pill" style="background:${t.color}"></span>${d.abbr}${crown} ${t.id===STATE.myTeamId?'←':''}</span>
@@ -2018,8 +2099,8 @@ function renderResultsModal(results, myResults, myPrize, delta){
   }).join('');
   const deltaText = delta>0 ? `+${delta.toFixed(1)}` : delta.toFixed(1);
   const deltaColor = delta>0?'var(--green)':delta<0?'var(--red)':'var(--dim)';
-  const biggestMover = RACE.drivers.filter(d=>!d.retired).slice().sort((a,b)=>(a.startPosition-a.position)-(b.startPosition-b.position)).pop();
-  const yourBest = myResults.filter(r=>!r.retired).sort((a,b)=>a.pos-b.pos)[0];
+  const biggestMover = RACE.drivers.filter(d=>!d.retired && !d.dsq).slice().sort((a,b)=>(a.startPosition-a.position)-(b.startPosition-b.position)).pop();
+  const yourBest = myResults.filter(r=>!r.retired && !r.dsq).sort((a,b)=>a.pos-b.pos)[0];
 
   openModal(`
     <h2>Race Result — ${RACE.track.name}</h2>
