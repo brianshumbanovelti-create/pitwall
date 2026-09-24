@@ -1,4 +1,5 @@
 // ===================== GAME STATE =====================
+console.log('[debug] game.js top-level executing');
 const STORAGE_KEY = 'pitwall_save_v1';
 
 let STATE = null;
@@ -88,6 +89,7 @@ function openModal(html){
 
 // ===================== INTRO =====================
 document.getElementById('btnGoTeamSelect').addEventListener('click', ()=>{
+  console.log('[debug] Choose your team clicked');
   renderTeamSelect();
   showScreen('screen-teamselect');
 });
@@ -96,6 +98,7 @@ document.getElementById('btnGoTeamSelect').addEventListener('click', ()=>{
 let selectedTeamId = null;
 
 function renderTeamSelect(){
+  console.log('[debug] renderTeamSelect called, TEAMS.length =', typeof TEAMS !== 'undefined' ? TEAMS.length : 'TEAMS UNDEFINED');
   const grid = document.getElementById('teamGrid');
   grid.innerHTML = '';
   TEAMS.forEach(team=>{
@@ -118,13 +121,16 @@ function renderTeamSelect(){
       <div class="team-drivers" style="margin-top:2px;">Board expects: ${obj.label}</div>
     `;
     card.addEventListener('click', ()=>{
+      console.log('[debug] card clicked:', team.id);
       document.querySelectorAll('.team-card').forEach(c=>c.classList.remove('selected'));
       card.classList.add('selected');
       selectedTeamId = team.id;
       document.getElementById('btnConfirmTeam').disabled = false;
+      console.log('[debug] selectedTeamId set to', selectedTeamId, 'confirm btn disabled =', document.getElementById('btnConfirmTeam').disabled);
     });
     grid.appendChild(card);
   });
+  console.log('[debug] renderTeamSelect finished, cards in grid:', grid.children.length);
 }
 
 document.getElementById('btnBackIntro').addEventListener('click', ()=>showScreen('screen-intro'));
@@ -1104,4 +1110,3 @@ function renderResultsModal(results){
     showScreen('screen-intro');
   }
 })();
- 
