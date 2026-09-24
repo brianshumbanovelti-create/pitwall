@@ -46,9 +46,11 @@ function buildFpBlock(){
              : `<button class="btn btn-primary btn-sm" id="btnRunFp">Run practice</button>`}
     </div>
   `;
-  if(!done) setTimeout(()=>document.getElementById('btnRunFp')?.addEventListener('click', runFp), 0);
+  const btn = el.querySelector('#btnRunFp');
+  if(btn) btn.addEventListener('click', runFp);
   return el;
 }
+
 function runFp(){
   const track = WEEKEND.track;
   const log = [];
@@ -74,8 +76,7 @@ function runFp(){
 
 // ---------- Qualifying (3 stages) ----------
 function buildQualiBlock(){
-  // BUG FIX: 'completed' only becomes true once the final grid exists (end of Q3).
-  // Previously we used `!!WEEKEND.quali`, which flipped true after Q1 and hid the Q2 button.
+  // 'completed' is only true once the final grid exists (set at the end of Q3).
   const completed = !!(WEEKEND.quali && WEEKEND.quali.grid);
   const locked = WEEKEND.fp.length === 0;
   const el = document.createElement('div');
@@ -83,7 +84,7 @@ function buildQualiBlock(){
 
   let stageButton = '';
   if(!locked && !completed){
-    if(!WEEKEND.qualiStage)          stageButton = `<button class="btn btn-primary btn-sm" id="btnRunQ1">Run Q1</button>`;
+    if(!WEEKEND.qualiStage)            stageButton = `<button class="btn btn-primary btn-sm" id="btnRunQ1">Run Q1</button>`;
     else if(WEEKEND.qualiStage==='q1') stageButton = `<button class="btn btn-primary btn-sm" id="btnRunQ2">Run Q2</button>`;
     else if(WEEKEND.qualiStage==='q2') stageButton = `<button class="btn btn-primary btn-sm" id="btnRunQ3">Run Q3</button>`;
   }
@@ -97,12 +98,15 @@ function buildQualiBlock(){
       <div style="margin-top:10px">${stageButton}</div>
     </div>
   `;
+
+  // Attach synchronously to nodes inside `el` — before it's appended.
   if(!locked && !completed){
-    setTimeout(()=>{
-      document.getElementById('btnRunQ1')?.addEventListener('click', ()=>runQualiStage('q1'));
-      document.getElementById('btnRunQ2')?.addEventListener('click', ()=>runQualiStage('q2'));
-      document.getElementById('btnRunQ3')?.addEventListener('click', ()=>runQualiStage('q3'));
-    }, 0);
+    const q1 = el.querySelector('#btnRunQ1');
+    const q2 = el.querySelector('#btnRunQ2');
+    const q3 = el.querySelector('#btnRunQ3');
+    if(q1) q1.addEventListener('click', ()=>runQualiStage('q1'));
+    if(q2) q2.addEventListener('click', ()=>runQualiStage('q2'));
+    if(q3) q3.addEventListener('click', ()=>runQualiStage('q3'));
   }
   return el;
 }
@@ -179,7 +183,6 @@ function runQualiStage(stage){
 
 // ---------- Strategy ----------
 function buildStrategyBlock(){
-  // Locked until the grid exists (end of Q3).
   const locked = !(WEEKEND.quali && WEEKEND.quali.grid);
   const el = document.createElement('div');
   el.className = 'wk-step' + (locked?' locked':'');
@@ -191,12 +194,13 @@ function buildStrategyBlock(){
       <div id="strategyDrivers"></div>
     </div>
   `;
-  setTimeout(()=>{
-    const wrap = document.getElementById('strategyDrivers');
-    if(!wrap) return;
-    wrap.innerHTML = myTeam().drivers.map(d=>driverStratHtml(d)).join('');
-    bindStrategyControls();
-  }, 0);
+  if(!locked){
+    const wrap = el.querySelector('#strategyDrivers');
+    if(wrap){
+      wrap.innerHTML = myTeam().drivers.map(d=>driverStratHtml(d)).join('');
+      bindStrategyControls(wrap);
+    }
+  }
   return el;
 }
 
@@ -235,15 +239,19 @@ function driverStratHtml(d){
   `;
 }
 
-function bindStrategyControls(){
-  document.querySelectorAll('[data-tyre]').forEach(b=>b.addEventListener('click', ()=>{
-    WEEKEND.strategy[b.dataset.abbr].tyre = b.dataset.tyre; refreshStrategyBlock();
+function bindStrategyControls(scope){
+  const root = scope || document;
+  root.querySelectorAll('[data-tyre]').forEach(b=>b.addEventListener('click', ()=>{
+    WEEKEND.strategy[b.dataset.abbr].tyre = b.dataset.tyre;
+    refreshStrategyBlock();
   }));
-  document.querySelectorAll('[data-plan]').forEach(b=>b.addEventListener('click', ()=>{
-    WEEKEND.strategy[b.dataset.abbr].plan = b.dataset.plan; refreshStrategyBlock();
+  root.querySelectorAll('[data-plan]').forEach(b=>b.addEventListener('click', ()=>{
+    WEEKEND.strategy[b.dataset.abbr].plan = b.dataset.plan;
+    refreshStrategyBlock();
   }));
-  document.querySelectorAll('[data-orders]').forEach(b=>b.addEventListener('click', ()=>{
-    WEEKEND.strategy[b.dataset.abbr].orders = b.dataset.orders; refreshStrategyBlock();
+  root.querySelectorAll('[data-orders]').forEach(b=>b.addEventListener('click', ()=>{
+    WEEKEND.strategy[b.dataset.abbr].orders = b.dataset.orders;
+    refreshStrategyBlock();
   }));
 }
 
@@ -251,7 +259,7 @@ function refreshStrategyBlock(){
   const wrap = document.getElementById('strategyDrivers');
   if(!wrap) return;
   wrap.innerHTML = myTeam().drivers.map(d=>driverStratHtml(d)).join('');
-  bindStrategyControls();
+  bindStrategyControls(wrap);
 }
 
 function buildGoRacingBlock(){
@@ -265,12 +273,11 @@ function buildGoRacingBlock(){
       <button class="btn btn-primary" id="btnGoRace" ${ready?'':'disabled'}>🏁 Go racing</button>
     </div>
   `;
-  setTimeout(()=>{
-    document.getElementById('btnGoRace')?.addEventListener('click', ()=>{
-      if(!WEEKEND.quali || !WEEKEND.quali.grid) return;
-      startRace(WEEKEND.quali.grid, WEEKEND.strategy);
-    });
-  }, 0);
+  const btn = el.querySelector('#btnGoRace');
+  if(btn && ready) btn.addEventListener('click', ()=>{
+    if(!WEEKEND.quali || !WEEKEND.quali.grid) return;
+    startRace(WEEKEND.quali.grid, WEEKEND.strategy);
+  });
   return el;
 }
 
