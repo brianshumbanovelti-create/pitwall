@@ -171,7 +171,6 @@
   .wk-log .good{color:var(--green);} .wk-log .bad{color:var(--red);} .wk-log .warn{color:var(--amber);}
   .wk-log .purple{color:var(--purple);}
 
-  /* Strategy preview */
   .strategy-preview{display:flex; flex-direction:column; gap:10px;}
   .strat-row{background:var(--bg2); border-radius:3px; padding:10px 12px;}
   .strat-row.recommended{border:1px solid var(--cyan); background:rgba(79,209,217,0.05);}
@@ -208,15 +207,12 @@
   .driver-strat-name{font-weight:700; font-size:13px; margin-bottom:8px; display:flex;
     justify-content:space-between; align-items:center;}
 
-  /* RACE SCREEN — 3 rows */
   #screen-race{background:var(--bg);}
   .race-header{background:var(--bg2); border-bottom:1px solid var(--line); flex-shrink:0;}
   .race-row{padding:8px 16px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; border-bottom:1px solid var(--line);}
   .race-row:last-child{border-bottom:none;}
-  .race-row-1{gap:14px;}
   .race-row-1 .race-track-name{font-weight:700; font-size:14px;}
   .race-row-1 .race-track-char{font-size:11.5px; color:var(--dim);}
-  .race-row-2{gap:14px;}
   .lap-counter{font-family:'JetBrains Mono', monospace; font-size:14px;}
   .lap-counter b{color:var(--cyan);}
   .speed-strip{display:flex; align-items:center; gap:6px; margin-left:auto;}
@@ -231,7 +227,6 @@
   .speed-icon-btn.active{background:var(--cyan); color:#0B0D10; border-color:var(--cyan);}
   .speed-icon-btn svg{width:14px; height:14px;}
 
-  /* Ribbon */
   .msg-ribbon{
     display:flex; align-items:center; gap:10px;
     padding:10px 16px; min-height:40px; flex-shrink:0;
@@ -244,7 +239,6 @@
   .msg-ribbon .ribbon-text{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .msg-ribbon .ribbon-pips{display:flex; gap:8px; flex-shrink:0; align-items:center;}
   .msg-ribbon .pip{font-size:13px;}
-  .msg-ribbon .pip.unread{color:var(--amber); font-weight:700; font-family:'JetBrains Mono', monospace; font-size:11px;}
   .ribbon-strat{color:var(--text); font-weight:600;}
   .ribbon-rc{color:var(--red); font-weight:700;}
   .ribbon-wu{color:#67e8f9; font-weight:700;}
@@ -271,13 +265,13 @@
   .timing-tower{width:100%; overflow-y:auto; min-height:0; flex:1;}
   .tt-header{
     display:grid;
-    grid-template-columns: 30px 42px 1fr 88px 130px 32px 46px;
+    grid-template-columns: 30px 42px 1fr 90px 130px 46px;
     gap:6px; padding:7px 12px; font-size:9.5px; color:var(--dimmer); font-weight:700;
     letter-spacing:0.4px; text-transform:uppercase; border-bottom:1px solid var(--line);
     position:sticky; top:0; background:var(--bg); z-index:2;}
   .tt-row{
     display:grid;
-    grid-template-columns: 30px 42px 1fr 88px 130px 32px 46px;
+    grid-template-columns: 30px 42px 1fr 90px 130px 46px;
     gap:6px; padding:8px 12px; align-items:center; font-size:12px;
     border-bottom:1px solid rgba(42,47,56,0.4); transition:background 0.4s ease; cursor:pointer;}
   .tt-row.me{background:rgba(79,209,217,0.07);}
@@ -293,19 +287,14 @@
   .tt-driver{display:flex; align-items:center; gap:6px;}
   .tt-driver-abbr{font-family:'JetBrains Mono', monospace; font-weight:700; letter-spacing:0.3px; font-size:11.5px;}
   .tt-gap{font-family:'JetBrains Mono', monospace; color:var(--dim); font-size:11.5px;}
-  .tt-pits{font-family:'JetBrains Mono', monospace; color:var(--dimmer); font-size:11px; text-align:right;}
   .crown{color:var(--purple); font-size:12px;}
 
   .tt-pitcol{text-align:center;}
-  .in-pit-indicator{color:#60a5fa; font-size:14px; display:inline-block;}
+  .in-pit-indicator{color:#60a5fa; font-size:10px; font-weight:700;
+    font-family:'JetBrains Mono', monospace; display:inline-block; letter-spacing:0.3px;}
 
   .tt-bars{display:flex; align-items:center; gap:10px; justify-content:flex-start;}
-
-  /* Tyre circle with diminishing wipe */
-  .tyre-svg-wrap{display:inline-flex; align-items:center; justify-content:center;}
-
-  /* Car health triangle */
-  .health-triangle{display:inline-flex; align-items:center; justify-content:center;}
+  .health-number{font-family:'JetBrains Mono', monospace; font-size:14px; font-weight:700; min-width:28px; text-align:center; display:inline-block;}
 
   .tt-action{display:flex; gap:4px; justify-content:flex-end; align-items:center;}
   .pit-btn{
@@ -353,7 +342,7 @@
 
   .msg-log{display:flex; flex-direction:column; gap:6px; margin-top:8px;}
   .msg-log-row{
-    display:grid; grid-template-columns: 42px 1fr;
+    display:grid; grid-template-columns: 52px 1fr;
     gap:10px; align-items:start;
     padding:8px 10px; background:var(--panel2); border-radius:3px;
     font-size:12.5px; line-height:1.5;
@@ -412,7 +401,7 @@
     .topbar{padding:8px 12px; gap:8px 12px;}
     .hub-main{padding:18px;}
     .wk-body{padding:14px;}
-    .tt-header, .tt-row{grid-template-columns: 26px 34px 1fr 78px 116px 26px 42px; gap:4px;}
+    .tt-header, .tt-row{grid-template-columns: 26px 34px 1fr 82px 110px 40px; gap:4px;}
     .radio-buttons{grid-template-columns:repeat(2, 1fr);}
     .speed-icon-btn{min-width:38px; height:32px; font-size:11px;}
   }
@@ -494,13 +483,11 @@
 
   <div class="screen" id="screen-race">
     <div class="race-header">
-      <!-- Row 1: race detail -->
       <div class="race-row race-row-1">
         <span class="race-track-name" id="raceTrackName"></span>
         <span class="flag-indicator flag-green" id="flagIndicator">Green</span>
         <span class="race-track-char" id="raceTrackMeta"></span>
       </div>
-      <!-- Row 2: controls -->
       <div class="race-row race-row-2">
         <span class="lap-counter">LAP <b id="lapNow">0</b>/<span id="lapTotal">0</span></span>
         <div class="speed-strip">
@@ -514,7 +501,6 @@
           </button>
         </div>
       </div>
-      <!-- Row 3: message ribbon -->
       <div class="msg-ribbon" id="msgRibbon" title="Click for full message log">
         <span class="ribbon-text" id="ribbonText">Race feed initialising…</span>
         <span class="ribbon-pips" id="ribbonPips"></span>
@@ -535,7 +521,6 @@
           <span>ACTION</span>
           <span>TYRE · HEALTH</span>
           <span>PIT</span>
-          <span>STOPS</span>
         </div>
         <div id="towerBody"></div>
       </div>
