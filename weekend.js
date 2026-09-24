@@ -67,18 +67,18 @@ function buildStrategyPreview(){
     strategies.push({ label:'Two-stop', sub:'Aggressive if it stays dry', stints:[['S', 0.35], ['M', 0.35], ['S', 0.30]] });
     strategies.push({ label:'Hard long run', sub:'Track position play', stints:[['H', 0.55], ['M', 0.45]] });
   } else if(hot){
-    strategies.push({ label:'Two-stop', sub:'Hot track chews tyres — plan two stops', stints:[['S', 0.35], ['M', 0.35], ['S', 0.30]], rec:true });
+    strategies.push({ label:'Two-stop', sub:'Hot track chews tyres — plan two stops', stints:[['S', 0.35], ['M', 0.35], ['H', 0.30]], rec:true });
     strategies.push({ label:'One-stop H→M', sub:'Manage deg on the hard', stints:[['H', 0.55], ['M', 0.45]] });
-    strategies.push({ label:'One-stop M→M', sub:'Balanced', stints:[['M', 0.5], ['M', 0.5]] });
+    strategies.push({ label:'One-stop M→H', sub:'Balanced', stints:[['M', 0.5], ['H', 0.5]] });
   } else if(cold){
-    strategies.push({ label:'One-stop M→M', sub:'Cold track favours fewer stops', stints:[['M', 0.5], ['M', 0.5]], rec:true });
-    strategies.push({ label:'Two-stop S→M→S', sub:'Aggressive if you can warm the softs', stints:[['S', 0.35], ['M', 0.35], ['S', 0.30]] });
+    strategies.push({ label:'One-stop M→H', sub:'Cold track favours fewer stops', stints:[['M', 0.5], ['H', 0.5]], rec:true });
+    strategies.push({ label:'Two-stop S→M→H', sub:'Aggressive if you can warm the softs', stints:[['S', 0.35], ['M', 0.35], ['H', 0.30]] });
     strategies.push({ label:'Soft start', sub:'Grip off the line', stints:[['S', 0.4], ['M', 0.6]] });
   } else {
     strategies.push({ label:'One-stop M→H', sub:'Balanced, safest option', stints:[['M', 0.5], ['H', 0.5]], rec:true });
     strategies.push({ label:'One-stop S→M', sub:'Softer first stint, quick start', stints:[['S', 0.4], ['M', 0.6]] });
-    strategies.push({ label:'Two-stop S→M→S', sub:'Aggressive', stints:[['S', 0.35], ['M', 0.35], ['S', 0.30]] });
-    strategies.push({ label:'Long first stint M→S', sub:'Track position play', stints:[['M', 0.65], ['S', 0.35]] });
+    strategies.push({ label:'Two-stop S→M→H', sub:'Aggressive', stints:[['S', 0.35], ['M', 0.35], ['H', 0.30]] });
+    strategies.push({ label:'Long first stint M→H', sub:'Track position play', stints:[['M', 0.65], ['H', 0.35]] });
   }
 
   const rows = strategies.map((s, i)=>{
