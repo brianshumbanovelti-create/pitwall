@@ -74,27 +74,30 @@ function runFp(){
 
 // ---------- Qualifying (3 stages) ----------
 function buildQualiBlock(){
-  const done = !!WEEKEND.quali;
+  // BUG FIX: 'completed' only becomes true once the final grid exists (end of Q3).
+  // Previously we used `!!WEEKEND.quali`, which flipped true after Q1 and hid the Q2 button.
+  const completed = !!(WEEKEND.quali && WEEKEND.quali.grid);
   const locked = WEEKEND.fp.length === 0;
   const el = document.createElement('div');
-  el.className = 'wk-step' + (done?' done':'') + (locked?' locked':'');
+  el.className = 'wk-step' + (completed?' done':'') + (locked?' locked':'');
 
   let stageButton = '';
-  if(!locked && !done){
-    if(!WEEKEND.qualiStage) stageButton = `<button class="btn btn-primary btn-sm" id="btnRunQ1">Run Q1</button>`;
+  if(!locked && !completed){
+    if(!WEEKEND.qualiStage)          stageButton = `<button class="btn btn-primary btn-sm" id="btnRunQ1">Run Q1</button>`;
     else if(WEEKEND.qualiStage==='q1') stageButton = `<button class="btn btn-primary btn-sm" id="btnRunQ2">Run Q2</button>`;
     else if(WEEKEND.qualiStage==='q2') stageButton = `<button class="btn btn-primary btn-sm" id="btnRunQ3">Run Q3</button>`;
   }
+
   el.innerHTML = `
     <div class="wk-step-header"><span><span class="step-num">02</span>Qualifying — Q1 / Q2 / Q3</span>
-      <span>${done?'✓ Complete':locked?'Locked':''}</span></div>
+      <span>${completed?'✓ Complete':locked?'Locked':''}</span></div>
     <div class="wk-step-body">
       <p class="dim small" style="margin-bottom:10px">Q1: 22 cars → 15 advance. Q2: 15 → 10. Q3: shootout for grid.</p>
-      ${WEEKEND.qualiStage || done ? `<div class="wk-log" id="qualiLog">${renderQualiLog()}</div>` : ''}
+      ${WEEKEND.qualiStage ? `<div class="wk-log" id="qualiLog">${renderQualiLog()}</div>` : ''}
       <div style="margin-top:10px">${stageButton}</div>
     </div>
   `;
-  if(!locked && !done){
+  if(!locked && !completed){
     setTimeout(()=>{
       document.getElementById('btnRunQ1')?.addEventListener('click', ()=>runQualiStage('q1'));
       document.getElementById('btnRunQ2')?.addEventListener('click', ()=>runQualiStage('q2'));
@@ -105,23 +108,23 @@ function buildQualiBlock(){
 }
 
 function renderQualiLog(){
-  if(!WEEKEND.qualiStage){
-    return '';
-  }
-  if(!WEEKEND.quali){
-    // Stage in progress, show partial
-    return '<div>Awaiting stage results...</div>';
-  }
+  if(!WEEKEND.qualiStage) return '';
+  if(!WEEKEND.quali) return '<div>Awaiting stage results...</div>';
   return WEEKEND.quali.log || '';
 }
 
 function runQualiStage(stage){
   const track = WEEKEND.track;
   const lines = [];
-  const allDrivers = TEAMS.flatMap(t=>t.drivers.map(d=>({ ...d, teamId:t.id, teamPace:t.pace + (t.id===STATE.myTeamId?STATE.carPaceBoost:0) + (t.id===STATE.myTeamId?(STATE.upgrades.aero+STATE.upgrades.pu)*2:0) })));
+  const allDrivers = TEAMS.flatMap(t=>t.drivers.map(d=>({
+    ...d,
+    teamId: t.id,
+    teamPace: t.pace + (t.id===STATE.myTeamId?STATE.carPaceBoost:0) + (t.id===STATE.myTeamId?(STATE.upgrades.aero+STATE.upgrades.pu)*2:0),
+  })));
 
   if(stage==='q1'){
-    const times = allDrivers.map(d=>({ ...d, time: 100 - (d.teamPace*0.35 + d.skill*0.25) + randf(-0.6,0.6) }))
+    const times = allDrivers
+      .map(d=>({ ...d, time: 100 - (d.teamPace*0.35 + d.skill*0.25) + randf(-0.6,0.6) }))
       .sort((a,b)=>a.time-b.time);
     const advancing = times.slice(0,15);
     const out = times.slice(15);
@@ -134,8 +137,11 @@ function runQualiStage(stage){
     renderWeekend();
     return;
   }
+
   if(stage==='q2'){
-    const pool = WEEKEND.quali.q1Advancing.map(d=>({ ...d, time: 100 - (d.teamPace*0.35 + d.skill*0.25) + randf(-0.6,0.6) }))
+    if(!WEEKEND.quali || !WEEKEND.quali.q1Advancing) return;
+    const pool = WEEKEND.quali.q1Advancing
+      .map(d=>({ ...d, time: 100 - (d.teamPace*0.35 + d.skill*0.25) + randf(-0.6,0.6) }))
       .sort((a,b)=>a.time-b.time);
     const advancing = pool.slice(0,10);
     const out = pool.slice(10);
@@ -150,19 +156,19 @@ function runQualiStage(stage){
     renderWeekend();
     return;
   }
+
   if(stage==='q3'){
-    const pool = WEEKEND.quali.q2Advancing.map(d=>({ ...d, time: 100 - (d.teamPace*0.35 + d.skill*0.25) + randf(-0.4,0.4) }))
+    if(!WEEKEND.quali || !WEEKEND.quali.q2Advancing) return;
+    const pool = WEEKEND.quali.q2Advancing
+      .map(d=>({ ...d, time: 100 - (d.teamPace*0.35 + d.skill*0.25) + randf(-0.4,0.4) }))
       .sort((a,b)=>a.time-b.time);
     lines.push(`<div class="good">Q3 complete. Grid set.</div>`);
     pool.forEach((d,i)=> lines.push(`<div>${i+1}. ${d.abbr} (${d.teamId.toUpperCase()}) ${d.time.toFixed(2)}</div>`));
-    // Build final grid: Q3 order (P1-10), then Q2 eliminated P11-15, then Q1 eliminated P16-22
+
     const eliminatedQ2 = WEEKEND.quali.q2All.slice(10);
     const eliminatedQ1 = WEEKEND.quali.q1All.slice(15);
-    const grid = [
-      ...pool,
-      ...eliminatedQ2,
-      ...eliminatedQ1,
-    ];
+    const grid = [...pool, ...eliminatedQ2, ...eliminatedQ1];
+
     WEEKEND.qualiStage = 'q3';
     WEEKEND.quali.grid = grid;
     WEEKEND.quali.log = (WEEKEND.quali.log || '') + lines.join('');
@@ -173,7 +179,8 @@ function runQualiStage(stage){
 
 // ---------- Strategy ----------
 function buildStrategyBlock(){
-  const locked = !WEEKEND.quali || !WEEKEND.quali.grid;
+  // Locked until the grid exists (end of Q3).
+  const locked = !(WEEKEND.quali && WEEKEND.quali.grid);
   const el = document.createElement('div');
   el.className = 'wk-step' + (locked?' locked':'');
   el.innerHTML = `
@@ -195,7 +202,9 @@ function buildStrategyBlock(){
 
 function driverStratHtml(d){
   const s = WEEKEND.strategy[d.abbr];
-  const gridPos = WEEKEND.quali && WEEKEND.quali.grid ? (WEEKEND.quali.grid.findIndex(g=>g.abbr===d.abbr)+1) : '—';
+  const gridPos = WEEKEND.quali && WEEKEND.quali.grid
+    ? (WEEKEND.quali.grid.findIndex(g=>g.abbr===d.abbr)+1)
+    : '—';
   return `
     <div class="driver-strat" data-abbr="${d.abbr}">
       <div class="driver-strat-name">
@@ -225,6 +234,7 @@ function driverStratHtml(d){
     </div>
   `;
 }
+
 function bindStrategyControls(){
   document.querySelectorAll('[data-tyre]').forEach(b=>b.addEventListener('click', ()=>{
     WEEKEND.strategy[b.dataset.abbr].tyre = b.dataset.tyre; refreshStrategyBlock();
@@ -236,6 +246,7 @@ function bindStrategyControls(){
     WEEKEND.strategy[b.dataset.abbr].orders = b.dataset.orders; refreshStrategyBlock();
   }));
 }
+
 function refreshStrategyBlock(){
   const wrap = document.getElementById('strategyDrivers');
   if(!wrap) return;
@@ -244,7 +255,7 @@ function refreshStrategyBlock(){
 }
 
 function buildGoRacingBlock(){
-  const ready = WEEKEND.quali && WEEKEND.quali.grid;
+  const ready = !!(WEEKEND.quali && WEEKEND.quali.grid);
   const el = document.createElement('div');
   el.className = 'wk-step';
   el.innerHTML = `
@@ -256,6 +267,7 @@ function buildGoRacingBlock(){
   `;
   setTimeout(()=>{
     document.getElementById('btnGoRace')?.addEventListener('click', ()=>{
+      if(!WEEKEND.quali || !WEEKEND.quali.grid) return;
       startRace(WEEKEND.quali.grid, WEEKEND.strategy);
     });
   }, 0);
