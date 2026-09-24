@@ -1,1112 +1,454 @@
-// ===================== GAME STATE =====================
-console.log('[debug] game.js top-level executing');
-const STORAGE_KEY = 'pitwall_save_v1';
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>PIT WALL — Team Principal</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
 
-let STATE = null;
-
-function newGameState(teamId){
-  const team = TEAMS.find(t=>t.id===teamId);
-  const engineers = {
-    aero: makeStarterEngineer('aero', team.tier),
-    reliability: makeStarterEngineer('reliability', team.tier),
-    strategist: makeStarterEngineer('strategist', team.tier),
-    perf: makeStarterEngineer('perf', team.tier),
-  };
-  const season = shuffleSchedule();
-  return {
-    myTeamId: teamId,
-    round: 0, // index into season, 0-based; race not yet run for this round until played
-    season, // array of track ids in order
-    budget: team.budget,
-    engineers,
-    candidates: [],
-    // per-team season points
-    constructorsPoints: Object.fromEntries(TEAMS.map(t=>[t.id,0])),
-    driversPoints: Object.fromEntries(TEAMS.flatMap(t=>t.drivers.map(d=>[d.abbr,0]))),
-    driverTeam: Object.fromEntries(TEAMS.flatMap(t=>t.drivers.map(d=>[d.abbr,t.id]))),
-    carPaceBoost: 0,       // cumulative from engineer hires
-    carReliabilityBoost: 0,
-    strategyBoost: 0,
-    raceLog: [],           // summarized results per round
-    objectiveState: 'on-track', // on-track | at-risk | failed | met (rough overall flag)
-  };
-}
-
-function makeStarterEngineer(roleKey, tier){
-  const role = ENGINEER_ROLES.find(r=>r.key===roleKey);
-  const base = { title:78, contender:68, midfield:58, backmarker:48 }[tier];
-  return {
-    id: roleKey+'_start',
-    name: randName(),
-    role: roleKey,
-    roleLabel: role.label,
-    affects: role.affects,
-    skill: base + rand(-4,4),
-  };
-}
-
-function randName(){ return `${pick(ENGINEER_FIRST)} ${pick(ENGINEER_LAST)}`; }
-function rand(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
-function randf(min,max){ return Math.random()*(max-min)+min; }
-function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
-function clamp(v,min,max){ return Math.max(min,Math.min(max,v)); }
-
-function shuffleSchedule(){
-  // Real tracks, shuffled once for a season order (deterministic-ish variety each new game).
-  const ids = TRACKS.map(t=>t.id);
-  for(let i=ids.length-1;i>0;i--){
-    const j = Math.floor(Math.random()*(i+1));
-    [ids[i],ids[j]] = [ids[j],ids[i]];
+  :root{
+    --bg:#0B0D10; --bg2:#12151A; --panel:#171B21; --panel2:#1D222A;
+    --line:#2A2F38; --text:#EDEAE2; --dim:#8B92A0; --dimmer:#565D6A;
+    --cyan:#4FD1D9; --cyan-dim:#2A5F63; --amber:#E8A93A; --red:#C4453D;
+    --green:#5FB878; --purple:#9B7ED9;
   }
-  return ids;
-}
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{background:var(--bg); color:var(--text); font-family:'Titillium Web', sans-serif;
+    overflow:hidden; -webkit-font-smoothing:antialiased;}
+  .mono{font-family:'JetBrains Mono', monospace;}
+  ::selection{background:var(--cyan-dim); color:#fff;}
+  ::-webkit-scrollbar{width:8px; height:8px;}
+  ::-webkit-scrollbar-track{background:var(--bg2);}
+  ::-webkit-scrollbar-thumb{background:var(--line); border-radius:4px;}
+  button{font-family:inherit; cursor:pointer; border:none; background:none; color:inherit;}
+  button:focus-visible, [tabindex]:focus-visible, select:focus-visible{outline:2px solid var(--cyan); outline-offset:2px;}
 
-function saveGame(){
-  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(STATE)); }catch(e){}
-}
-function loadGame(){
-  try{
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if(!raw) return null;
-    return JSON.parse(raw);
-  }catch(e){ return null; }
-}
-function clearSave(){ try{ localStorage.removeItem(STORAGE_KEY); }catch(e){} }
+  #app{height:100dvh; width:100vw; position:relative; overflow:hidden;}
+  .screen{height:100%; width:100%; display:none; overflow:hidden;}
+  .screen.active{display:flex; flex-direction:column; min-height:0;}
 
-// ===================== SCREEN MANAGEMENT =====================
-function showScreen(id){
-  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
-}
+  .topbar{height:auto; min-height:52px; display:flex; align-items:center;
+    padding:8px 20px; border-bottom:1px solid var(--line); background:var(--bg2);
+    gap:16px; flex-wrap:wrap; flex-shrink:0;}
+  .brand{font-weight:900; font-size:15px; letter-spacing:0.5px; display:flex; align-items:center; gap:8px;}
+  .brand .dot{width:8px; height:8px; border-radius:50%; background:var(--cyan); box-shadow:0 0 8px var(--cyan);}
+  .topbar-spacer{flex:1;}
+  .topbar-stat{font-size:13px; color:var(--dim);}
+  .topbar-stat b{color:var(--text); font-weight:600;}
 
-function closeModal(){
-  document.getElementById('modalOverlay').classList.remove('active');
-}
-function openModal(html){
-  document.getElementById('modalContent').innerHTML = html;
-  document.getElementById('modalOverlay').classList.add('active');
-}
+  /* intro */
+  #screen-intro{align-items:center; justify-content:center;
+    background:radial-gradient(ellipse 1200px 600px at 50% -10%, rgba(79,209,217,0.08), transparent), var(--bg);
+    overflow-y:auto;}
+  .intro-wrap{max-width:640px; padding:40px 24px; text-align:center; width:100%;}
+  .intro-title{font-size:44px; font-weight:900; letter-spacing:1px; line-height:1.05; margin-bottom:10px;}
+  .intro-title span{color:var(--cyan);}
+  .intro-sub{color:var(--dim); font-size:15px; margin-bottom:28px; line-height:1.6;}
+  .intro-start{padding:14px 36px; background:var(--cyan); color:#0B0D10; font-weight:700; font-size:15px;
+    border-radius:2px; letter-spacing:0.3px; transition:transform 0.15s ease, box-shadow 0.15s ease;}
+  .intro-start:hover{transform:translateY(-1px); box-shadow:0 4px 20px rgba(79,209,217,0.25);}
+  .intro-menu{display:flex; flex-direction:column; gap:10px; max-width:280px; margin:0 auto;}
+  .intro-menu .btn{width:100%; justify-content:center; text-align:center;}
 
-// ===================== INTRO =====================
-document.getElementById('btnGoTeamSelect').addEventListener('click', ()=>{
-  console.log('[debug] Choose your team clicked');
-  renderTeamSelect();
-  showScreen('screen-teamselect');
-});
+  /* team select */
+  #screen-teamselect{padding:0;}
+  .ts-header{padding:20px 24px 14px; border-bottom:1px solid var(--line); flex-shrink:0;}
+  .ts-header h1{font-size:20px; font-weight:700; margin-bottom:4px;}
+  .ts-header p{color:var(--dim); font-size:13px;}
+  .ts-grid{flex:1; min-height:0; overflow-y:auto; display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(240px, 1fr));
+    gap:1px; background:var(--line); padding:1px; align-content:start;}
+  .team-card{background:var(--panel); padding:16px; cursor:pointer;
+    transition:background 0.15s ease; display:flex; flex-direction:column; gap:8px;
+    border-left:3px solid transparent;}
+  .team-card:hover{background:var(--panel2);}
+  .team-card.selected{border-left-color:var(--cyan); background:var(--panel2);}
+  .team-card-top{display:flex; align-items:center; justify-content:space-between;}
+  .team-abbr{font-family:'JetBrains Mono', monospace; font-weight:700; font-size:18px; letter-spacing:1px;}
+  .team-tier{font-size:9px; letter-spacing:0.5px; padding:3px 7px; border-radius:2px;
+    text-transform:uppercase; font-weight:700;}
+  .tier-title{background:rgba(232,169,58,0.15); color:var(--amber);}
+  .tier-contender{background:rgba(95,184,120,0.15); color:var(--green);}
+  .tier-midfield{background:rgba(79,209,217,0.15); color:var(--cyan);}
+  .tier-backmarker{background:rgba(139,146,160,0.15); color:var(--dim);}
+  .team-name{font-size:12.5px; color:var(--dim);}
+  .team-drivers{font-size:11.5px; color:var(--dimmer);}
+  .team-drivers b{color:var(--text); font-weight:600;}
+  .team-stats{display:flex; gap:12px; flex-wrap:wrap;}
+  .team-stat-mini{font-size:10.5px; color:var(--dimmer);}
+  .team-stat-mini b{color:var(--dim); font-family:'JetBrains Mono', monospace;}
+  .ts-footer{padding:12px 20px calc(12px + env(safe-area-inset-bottom)); border-top:1px solid var(--line);
+    display:flex; justify-content:flex-end; gap:10px; background:var(--bg2); flex-shrink:0;
+    position:sticky; bottom:0;}
 
-// ===================== TEAM SELECT =====================
-let selectedTeamId = null;
+  .btn{padding:10px 22px; font-size:13.5px; font-weight:600; border-radius:2px;
+    letter-spacing:0.2px; transition:opacity 0.15s ease, transform 0.1s ease;
+    display:inline-flex; align-items:center; justify-content:center; gap:8px;}
+  .btn:active{transform:scale(0.98);}
+  .btn:disabled{opacity:0.35; cursor:not-allowed;}
+  .btn-primary{background:var(--cyan); color:#0B0D10;}
+  .btn-primary:not(:disabled):hover{opacity:0.9;}
+  .btn-ghost{background:var(--panel2); color:var(--text); border:1px solid var(--line);}
+  .btn-ghost:hover{background:var(--line);}
+  .btn-danger{background:var(--red); color:#fff;}
+  .btn-sm{padding:7px 13px; font-size:12px;}
 
-function renderTeamSelect(){
-  console.log('[debug] renderTeamSelect called, TEAMS.length =', typeof TEAMS !== 'undefined' ? TEAMS.length : 'TEAMS UNDEFINED');
-  const grid = document.getElementById('teamGrid');
-  grid.innerHTML = '';
-  TEAMS.forEach(team=>{
-    const card = document.createElement('div');
-    card.className = 'team-card';
-    card.dataset.teamId = team.id;
-    const obj = TIER_OBJECTIVES[team.tier];
-    card.innerHTML = `
-      <div class="team-card-top">
-        <span class="team-abbr mono" style="color:${team.color}">${team.abbr}</span>
-        <span class="team-tier tier-${team.tier}">${team.tier}</span>
+  /* hub */
+  .hub-body{flex:1; display:flex; overflow:hidden; min-height:0;}
+  .hub-side{width:260px; min-width:260px; border-right:1px solid var(--line);
+    background:var(--bg2); overflow-y:auto; padding:18px;}
+  .hub-main{flex:1; overflow-y:auto; padding:24px 28px; min-width:0;}
+  .side-block{margin-bottom:22px;}
+  .side-label{font-size:10.5px; letter-spacing:0.8px; color:var(--dimmer); font-weight:700;
+    margin-bottom:8px; text-transform:uppercase;}
+  .side-row{display:flex; justify-content:space-between; font-size:12.5px; padding:5px 0; color:var(--dim);}
+  .side-row b{color:var(--text); font-family:'JetBrains Mono', monospace; font-weight:500;}
+  .obj-item{padding:10px 12px; background:var(--panel); border-radius:3px; margin-bottom:8px;
+    border-left:3px solid var(--dimmer); font-size:12px;}
+  .obj-item.met{border-left-color:var(--green);}
+  .obj-item.at-risk{border-left-color:var(--amber);}
+  .obj-item.failed{border-left-color:var(--red);}
+  .obj-item .obj-title{font-weight:600; color:var(--text); margin-bottom:2px;}
+  .obj-item .obj-status{color:var(--dim); font-size:11px;}
+
+  .conf-bar{height:6px; background:var(--bg2); border-radius:3px; overflow:hidden; margin-top:8px;}
+  .conf-fill{height:100%; transition:width 0.4s ease;}
+
+  .hub-section{margin-bottom:28px;}
+  .hub-section-title{font-size:15px; font-weight:700; margin-bottom:3px;}
+  .hub-section-sub{font-size:12px; color:var(--dim); margin-bottom:14px;}
+
+  .next-race-card{background:linear-gradient(135deg, rgba(79,209,217,0.08), var(--panel));
+    border:1px solid var(--cyan-dim); border-radius:4px; padding:18px 20px;
+    display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;}
+  .nrc-round{font-size:10.5px; color:var(--cyan); letter-spacing:0.5px; font-weight:700; margin-bottom:5px;}
+  .nrc-name{font-size:18px; font-weight:700; margin-bottom:6px;}
+  .nrc-meta{font-size:12px; color:var(--dim); display:flex; gap:12px; flex-wrap:wrap;}
+  .nrc-meta span{display:flex; align-items:center; gap:4px;}
+
+  .standings-table{width:100%; border-collapse:collapse; font-size:12.5px;}
+  .standings-table th{text-align:left; font-size:10.5px; color:var(--dimmer); font-weight:700;
+    letter-spacing:0.4px; padding:7px 9px; border-bottom:1px solid var(--line); text-transform:uppercase;}
+  .standings-table td{padding:8px 9px; border-bottom:1px solid rgba(42,47,56,0.5);}
+  .standings-table tr.me{background:rgba(79,209,217,0.06);}
+  .standings-table .pos{color:var(--dimmer); font-family:'JetBrains Mono', monospace; width:28px;}
+  .standings-table .pts{font-family:'JetBrains Mono', monospace; text-align:right; color:var(--text); font-weight:600;}
+  .team-pill{display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:7px;}
+
+  .roster-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(200px,1fr)); gap:10px;}
+  .eng-card{background:var(--panel); border-radius:3px; padding:12px 14px; border:1px solid var(--line);}
+  .eng-name{font-weight:600; font-size:13.5px;}
+  .eng-role{font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:0.4px; margin-bottom:8px;}
+  .eng-bars{display:flex; flex-direction:column; gap:4px;}
+  .eng-bar-row{display:flex; align-items:center; gap:8px; font-size:10.5px; color:var(--dimmer);}
+  .eng-bar-track{flex:1; height:4px; background:var(--bg2); border-radius:2px; overflow:hidden;}
+  .eng-bar-fill{height:100%; background:var(--cyan); border-radius:2px;}
+
+  .candidate-card{background:var(--panel); border-radius:3px; padding:14px;
+    border:1px solid var(--line); margin-bottom:9px;
+    display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap;}
+  .candidate-info{flex:1; min-width:180px;}
+  .candidate-name{font-weight:700; font-size:14px; margin-bottom:2px;}
+  .candidate-role{font-size:11px; color:var(--cyan); text-transform:uppercase; letter-spacing:0.3px; margin-bottom:7px;}
+  .candidate-stats{display:flex; gap:12px; flex-wrap:wrap;}
+  .candidate-cost{font-family:'JetBrains Mono', monospace; font-size:12.5px; color:var(--amber); font-weight:600;}
+
+  /* race weekend */
+  #screen-weekend{padding:0;}
+  .wk-header{padding:16px 22px; border-bottom:1px solid var(--line); flex-shrink:0;
+    display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap;}
+  .wk-round{font-size:11px; color:var(--cyan); letter-spacing:0.5px; font-weight:700;}
+  .wk-track{font-size:20px; font-weight:700;}
+  .wk-meta{font-size:12px; color:var(--dim); margin-top:4px;}
+  .wk-body{flex:1; overflow-y:auto; padding:22px; min-height:0;}
+  .wk-step{margin-bottom:22px; border:1px solid var(--line); border-radius:4px;
+    background:var(--panel); overflow:hidden;}
+  .wk-step-header{padding:12px 16px; background:var(--bg2); display:flex; justify-content:space-between;
+    align-items:center; border-bottom:1px solid var(--line); font-weight:700; font-size:13.5px;}
+  .wk-step-header .step-num{color:var(--cyan); font-family:'JetBrains Mono', monospace; margin-right:8px;}
+  .wk-step-body{padding:16px;}
+  .wk-step.done{opacity:0.6;}
+  .wk-step.locked{opacity:0.4; pointer-events:none;}
+  .wk-log{font-family:'JetBrains Mono', monospace; font-size:11px; color:var(--dim);
+    background:var(--bg2); padding:10px; border-radius:3px; max-height:140px; overflow-y:auto;
+    line-height:1.6;}
+  .wk-log .good{color:var(--green);} .wk-log .bad{color:var(--red);} .wk-log .warn{color:var(--amber);}
+
+  .tyre-select{display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;}
+  .tyre-btn{padding:7px 12px; background:var(--panel2); border:1px solid var(--line);
+    border-radius:3px; font-size:12px; display:flex; align-items:center; gap:6px;}
+  .tyre-btn.active{border-color:var(--cyan); background:rgba(79,209,217,0.1);}
+  .tyre-dot{width:16px; height:16px; border-radius:50%; border:2px solid;}
+  .tyre-dot.S{border-color:var(--red); color:var(--red);}
+  .tyre-dot.M{border-color:var(--amber); color:var(--amber);}
+  .tyre-dot.H{border-color:var(--text); color:var(--text);}
+  .tyre-dot.I{border-color:var(--green); color:var(--green);}
+  .tyre-dot.W{border-color:var(--cyan); color:var(--cyan);}
+
+  .driver-strat{background:var(--panel2); padding:12px; border-radius:3px; margin-bottom:10px;}
+  .driver-strat-name{font-weight:700; font-size:13px; margin-bottom:8px; display:flex;
+    justify-content:space-between; align-items:center;}
+
+  /* race */
+  .race-topbar{height:auto; padding:8px 16px; display:flex; align-items:center;
+    flex-wrap:wrap; gap:10px 18px;}
+  .race-track-name{font-weight:700; font-size:13.5px;}
+  .race-track-meta{font-size:11px; color:var(--dim); display:flex; gap:8px;}
+  .flag-indicator{font-size:10.5px; font-weight:700; letter-spacing:0.5px; padding:4px 9px;
+    border-radius:2px; text-transform:uppercase;}
+  .flag-green{background:rgba(95,184,120,0.18); color:var(--green);}
+  .flag-yellow{background:rgba(232,169,58,0.18); color:var(--amber);}
+  .flag-vsc{background:rgba(232,169,58,0.28); color:var(--amber); animation:pulse 1.2s infinite;}
+  .flag-sc{background:rgba(232,169,58,0.35); color:var(--amber); animation:pulse 1.2s infinite;}
+  .flag-red{background:rgba(196,69,61,0.3); color:var(--red); animation:pulse 0.9s infinite;}
+  .flag-checkered{background:var(--panel2); color:var(--text);}
+  @keyframes pulse{0%,100%{opacity:1;} 50%{opacity:0.55;}}
+
+  .lap-counter{font-family:'JetBrains Mono', monospace; font-size:13px;}
+  .lap-counter b{color:var(--cyan);}
+  .weather-chip{font-size:11px; color:var(--dim); display:flex; align-items:center; gap:5px;}
+  .race-controls{display:flex; align-items:center; gap:6px; margin-left:auto;}
+  .speed-btn{padding:5px 10px; font-size:11.5px; font-weight:600; border-radius:2px;
+    background:var(--panel2); color:var(--dim); border:1px solid var(--line);}
+  .speed-btn.active{background:var(--cyan); color:#0B0D10; border-color:var(--cyan);}
+
+  .race-body{flex:1; display:flex; overflow:hidden; min-height:0;}
+  .race-view-toggle{display:flex; gap:1px; background:var(--line); border-radius:2px; overflow:hidden;}
+  .rvt-btn{padding:5px 12px; font-size:11.5px; background:var(--panel2); color:var(--dim); font-weight:600;}
+  .rvt-btn.active{background:var(--panel); color:var(--cyan);}
+
+  .timing-tower{width:100%; overflow-y:auto; min-height:0;}
+  .tt-header{display:grid; grid-template-columns:30px 40px 1fr 60px 60px 50px 40px;
+    gap:6px; padding:7px 12px; font-size:9.5px; color:var(--dimmer); font-weight:700;
+    letter-spacing:0.4px; text-transform:uppercase; border-bottom:1px solid var(--line);
+    position:sticky; top:0; background:var(--bg); z-index:2;}
+  .tt-row{display:grid; grid-template-columns:30px 40px 1fr 60px 60px 50px 40px;
+    gap:6px; padding:8px 12px; align-items:center; font-size:12px;
+    border-bottom:1px solid rgba(42,47,56,0.4); transition:background 0.4s ease;}
+  .tt-row.me{background:rgba(79,209,217,0.07);}
+  .tt-row.retired{opacity:0.35;}
+  .tt-row.damaged{background:rgba(232,169,58,0.06);}
+  .tt-row.penalty{background:rgba(196,69,61,0.08);}
+  .tt-pos{font-family:'JetBrains Mono', monospace; color:var(--dimmer); font-weight:600;}
+  .tt-team-pill{width:4px; height:18px; border-radius:1px; display:inline-block;}
+  .tt-driver{display:flex; align-items:center; gap:6px;}
+  .tt-driver-abbr{font-family:'JetBrains Mono', monospace; font-weight:700; letter-spacing:0.3px; font-size:11.5px;}
+  .tt-tyre{font-family:'JetBrains Mono', monospace; font-size:10px; font-weight:700;
+    width:18px; height:18px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    border:1.5px solid;}
+  .tyre-S{color:var(--red); border-color:var(--red);}
+  .tyre-M{color:var(--amber); border-color:var(--amber);}
+  .tyre-H{color:var(--text); border-color:var(--dim);}
+  .tyre-I{color:var(--green); border-color:var(--green);}
+  .tyre-W{color:var(--cyan); border-color:var(--cyan);}
+  .tt-gap{font-family:'JetBrains Mono', monospace; color:var(--dim); font-size:11.5px;}
+  .tt-tyreage{font-family:'JetBrains Mono', monospace; color:var(--dimmer); font-size:11px;}
+  .tt-pits{font-family:'JetBrains Mono', monospace; color:var(--dimmer); font-size:11px; text-align:right;}
+
+  .feed-panel{width:320px; min-width:320px; border-left:1px solid var(--line);
+    display:flex; flex-direction:column; background:var(--bg2); min-height:0;}
+  .feed-header{padding:9px 14px; border-bottom:1px solid var(--line); font-size:10.5px;
+    font-weight:700; letter-spacing:0.5px; color:var(--dimmer); text-transform:uppercase; flex-shrink:0;}
+  .feed-scroll{flex:1; overflow-y:auto; padding:8px 12px; display:flex;
+    flex-direction:column-reverse; min-height:0;}
+  .feed-item{font-size:11.5px; line-height:1.5; padding:7px 0;
+    border-bottom:1px solid rgba(42,47,56,0.4); color:var(--dim);}
+  .feed-item b{color:var(--text);}
+  .feed-item.flag{color:var(--amber);} .feed-item.flag b{color:var(--amber);}
+  .feed-item.danger{color:var(--red);} .feed-item.danger b{color:var(--red);}
+  .feed-item.good{color:var(--green);}
+  .feed-item.radio{color:var(--purple); font-style:italic;}
+  .feed-item .feed-lap{color:var(--dimmer); font-family:'JetBrains Mono', monospace;
+    font-size:10px; margin-right:5px;}
+
+  .track-view{width:100%; display:flex; align-items:center; justify-content:center;
+    padding:12px; overflow:hidden; min-height:0;}
+  #trackCanvas{max-width:100%; max-height:100%;}
+
+  .decision-bar{border-top:1px solid var(--line); background:var(--panel);
+    padding:14px 20px; display:none; flex-shrink:0;}
+  .decision-bar.active{display:block;}
+  .decision-title{font-size:12.5px; font-weight:700; color:var(--amber); margin-bottom:3px;
+    display:flex; align-items:center; gap:7px;}
+  .decision-title .pulse-dot{width:7px; height:7px; border-radius:50%; background:var(--amber); animation:pulse 1s infinite;}
+  .decision-sub{font-size:11.5px; color:var(--dim); margin-bottom:12px;}
+  .decision-options{display:flex; gap:8px; flex-wrap:wrap;}
+  .decision-opt{flex:1; min-width:140px; background:var(--panel2); border:1px solid var(--line);
+    border-radius:3px; padding:11px 13px; text-align:left;
+    transition:border-color 0.15s ease, background 0.15s ease;}
+  .decision-opt:hover{border-color:var(--cyan); background:var(--bg2);}
+  .decision-opt-title{font-weight:700; font-size:12.5px; margin-bottom:2px;}
+  .decision-opt-desc{font-size:11px; color:var(--dim);}
+
+  .modal-overlay{position:fixed; inset:0; background:rgba(0,0,0,0.7);
+    display:none; align-items:center; justify-content:center; z-index:100; padding:16px;}
+  .modal-overlay.active{display:flex;}
+  .modal{background:var(--panel); border:1px solid var(--line); border-radius:4px;
+    max-width:560px; width:100%; padding:24px; max-height:88vh; overflow-y:auto;}
+  .modal h2{font-size:18px; margin-bottom:12px;}
+  .modal p{font-size:13px; color:var(--dim); line-height:1.6; margin-bottom:9px;}
+  .modal-actions{display:flex; gap:9px; justify-content:flex-end; margin-top:18px; flex-wrap:wrap;}
+
+  .banner-flash{position:fixed; top:70px; left:50%; transform:translateX(-50%);
+    padding:12px 24px; border-radius:3px; font-weight:700; font-size:13px;
+    letter-spacing:0.4px; z-index:50; opacity:0; pointer-events:none;
+    transition:opacity 0.3s ease, transform 0.3s ease; text-transform:uppercase;}
+  .banner-flash.show{opacity:1; transform:translateX(-50%) translateY(8px);}
+  .banner-yellow{background:var(--amber); color:#0B0D10;}
+  .banner-red{background:var(--red); color:#fff;}
+  .banner-green{background:var(--green); color:#0B0D10;}
+
+  .save-slot{background:var(--panel); border:1px solid var(--line); border-radius:3px;
+    padding:14px; margin-bottom:9px; display:flex; justify-content:space-between;
+    align-items:center; gap:12px; flex-wrap:wrap;}
+  .save-slot .meta{font-size:12px; color:var(--dim);}
+
+  @media (max-width:900px){
+    .hub-side{display:none;}
+    .feed-panel{display:none;}
+    .ts-grid{grid-template-columns:1fr;}
+    .ts-header{padding:14px 18px;}
+    .ts-footer{padding:10px 16px calc(10px + env(safe-area-inset-bottom)); justify-content:stretch;}
+    .ts-footer .btn{flex:1;}
+    .intro-title{font-size:30px;}
+    .intro-wrap{padding:24px 18px;}
+    .race-body{flex-direction:column;}
+    .timing-tower{flex:1; min-height:0;}
+    .race-controls{margin-left:0; width:100%; justify-content:flex-end;}
+    .topbar{padding:8px 12px; gap:8px 12px;}
+    .hub-main{padding:18px;}
+    .wk-body{padding:14px;}
+    .tt-header, .tt-row{grid-template-columns:26px 34px 1fr 46px 0 0 0;}
+    .tt-header > *:nth-child(5), .tt-header > *:nth-child(6), .tt-header > *:nth-child(7),
+    .tt-row > *:nth-child(5), .tt-row > *:nth-child(6), .tt-row > *:nth-child(7){display:none;}
+    .decision-opt{min-width:100%;}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="screen active" id="screen-intro">
+    <div class="intro-wrap">
+      <div class="intro-title">PIT WALL<span>.</span></div>
+      <div class="intro-sub">Take the job. Hire the right people. Approve the right strategy. Deliver what the board demands — or lose the seat.</div>
+      <div class="intro-menu">
+        <button class="btn btn-primary" id="btnGoTeamSelect">New career</button>
+        <button class="btn btn-ghost" id="btnLoadGame">Continue</button>
+        <button class="btn btn-ghost" id="btnSaveSlots">Save slots</button>
+        <button class="btn btn-ghost" id="btnSettings">Settings</button>
       </div>
-      <div class="team-name">${team.name}</div>
-      <div class="team-drivers"><b>${team.drivers[0].abbr}</b> &middot; <b>${team.drivers[1].abbr}</b></div>
-      <div class="team-stats">
-        <span class="team-stat-mini">PACE <b>${team.pace}</b></span>
-        <span class="team-stat-mini">RELIABILITY <b>${team.reliability}</b></span>
-        <span class="team-stat-mini">BUDGET <b>$${team.budget}M</b></span>
-      </div>
-      <div class="team-drivers" style="margin-top:2px;">Board expects: ${obj.label}</div>
-    `;
-    card.addEventListener('click', ()=>{
-      console.log('[debug] card clicked:', team.id);
-      document.querySelectorAll('.team-card').forEach(c=>c.classList.remove('selected'));
-      card.classList.add('selected');
-      selectedTeamId = team.id;
-      document.getElementById('btnConfirmTeam').disabled = false;
-      console.log('[debug] selectedTeamId set to', selectedTeamId, 'confirm btn disabled =', document.getElementById('btnConfirmTeam').disabled);
-    });
-    grid.appendChild(card);
-  });
-  console.log('[debug] renderTeamSelect finished, cards in grid:', grid.children.length);
-}
-
-document.getElementById('btnBackIntro').addEventListener('click', ()=>showScreen('screen-intro'));
-
-document.getElementById('btnConfirmTeam').addEventListener('click', ()=>{
-  if(!selectedTeamId) return;
-  STATE = newGameState(selectedTeamId);
-  saveGame();
-  enterHub();
-});
-
-// ===================== HUB =====================
-function myTeam(){ return TEAMS.find(t=>t.id===STATE.myTeamId); }
-function teamById(id){ return TEAMS.find(t=>t.id===id); }
-
-function enterHub(){
-  renderHub();
-  showScreen('screen-hub');
-}
-
-function currentTrack(){
-  const trackId = STATE.season[STATE.round];
-  return TRACKS.find(t=>t.id===trackId);
-}
-
-function renderHub(){
-  const team = myTeam();
-  document.getElementById('hubTeamLabel').innerHTML = `<b style="color:${team.color}">${team.abbr}</b> &middot; ${team.name}`;
-  document.getElementById('hubBudget').textContent = `$${STATE.budget}M`;
-  document.getElementById('hubRound').textContent = Math.min(STATE.round+1, STATE.season.length);
-  document.getElementById('hubTotalRounds').textContent = STATE.season.length;
-
-  // side: objective
-  renderObjectiveBox();
-
-  // side: championship position
-  const consStandings = getConstructorsStandings();
-  const myConsPos = consStandings.findIndex(s=>s.teamId===team.id)+1;
-  document.getElementById('sideConsPos').textContent = myConsPos ? `P${myConsPos}` : '—';
-
-  const drivStandings = getDriversStandings();
-  const myDriverEntries = drivStandings.filter(s=>STATE.driverTeam[s.abbr]===team.id);
-  const bestMine = myDriverEntries[0];
-  const bestMinePos = bestMine ? drivStandings.indexOf(bestMine)+1 : null;
-  document.getElementById('sideDrivPos').textContent = bestMinePos ? `P${bestMinePos}` : '—';
-
-  document.getElementById('sidePace').textContent = team.pace + STATE.carPaceBoost;
-  document.getElementById('sideReli').textContent = team.reliability + STATE.carReliabilityBoost;
-
-  renderHubMain();
-}
-
-function renderObjectiveBox(){
-  const team = myTeam();
-  const obj = TIER_OBJECTIVES[team.tier];
-  const consStandings = getConstructorsStandings();
-  const myConsPos = consStandings.findIndex(s=>s.teamId===team.id)+1 || TEAMS.length;
-  const racesRun = STATE.round;
-  const racesLeft = STATE.season.length - racesRun;
-
-  let status = 'on-track', statusLabel = 'On track';
-  if(myConsPos <= obj.conText){ status='met'; statusLabel='Meeting expectations'; }
-  else if(myConsPos <= obj.conText + 2){ status='at-risk'; statusLabel='At risk'; }
-  else if(racesLeft < 4 && myConsPos > obj.conText + 2){ status='failed'; statusLabel='Falling short'; }
-  else { status='at-risk'; statusLabel='Behind target'; }
-
-  if(racesRun===0){ status='on-track'; statusLabel='Season not yet started'; }
-
-  document.getElementById('objectiveBox').innerHTML = `
-    <div class="obj-item ${status}">
-      <div class="obj-title">${obj.label}</div>
-      <div class="obj-status">Currently P${myConsPos} in constructors &middot; ${statusLabel}</div>
     </div>
-  `;
-}
+  </div>
 
-function getConstructorsStandings(){
-  return TEAMS.map(t=>({ teamId:t.id, points: STATE.constructorsPoints[t.id] }))
-    .sort((a,b)=>b.points-a.points);
-}
-function getDriversStandings(){
-  const arr = Object.entries(STATE.driversPoints).map(([abbr,points])=>({abbr,points}));
-  return arr.sort((a,b)=>b.points-a.points);
-}
+  <div class="screen" id="screen-teamselect">
+    <div class="ts-header">
+      <h1>Select your team</h1>
+      <p>Board expectations scale with your car. Win or be replaced.</p>
+    </div>
+    <div class="ts-grid" id="teamGrid"></div>
+    <div class="ts-footer">
+      <button class="btn btn-ghost" id="btnBackIntro">Back</button>
+      <button class="btn btn-primary" id="btnConfirmTeam" disabled>Take the job</button>
+    </div>
+  </div>
 
-function renderHubMain(){
-  const main = document.getElementById('hubMain');
-  const seasonDone = STATE.round >= STATE.season.length;
-
-  if(seasonDone){
-    main.innerHTML = renderSeasonEndHTML();
-    document.getElementById('btnNewSeason')?.addEventListener('click', ()=>{
-      clearSave();
-      showScreen('screen-intro');
-    });
-    return;
-  }
-
-  const track = currentTrack();
-  const team = myTeam();
-
-  main.innerHTML = `
-    <div class="hub-section">
-      <div class="hub-section-title">Next race</div>
-      <div class="hub-section-sub">Round ${STATE.round+1} of ${STATE.season.length}</div>
-      <div class="next-race-card">
-        <div class="nrc-left">
-          <div class="nrc-round">ROUND ${STATE.round+1}</div>
-          <div class="nrc-name">${track.name} &mdash; ${track.country}</div>
-          <div class="nrc-meta">
-            <span>🌡 ${track.tempC}°C air / ${track.trackTempC}°C track</span>
-            <span>💨 ${track.windKmh} km/h wind</span>
-            <span>${weatherLabel(track)}</span>
-          </div>
+  <div class="screen" id="screen-hub">
+    <div class="topbar">
+      <div class="brand"><span class="dot"></span> PIT WALL</div>
+      <div class="topbar-spacer"></div>
+      <div class="topbar-stat" id="hubTeamLabel"></div>
+      <div class="topbar-stat">Budget: <b id="hubBudget"></b></div>
+      <div class="topbar-stat">Season <b id="hubSeason">1</b> · Round <b id="hubRound"></b>/<span id="hubTotalRounds"></span></div>
+    </div>
+    <div class="hub-body">
+      <div class="hub-side">
+        <div class="side-block">
+          <div class="side-label">Board confidence</div>
+          <div id="confBox"></div>
         </div>
-        <button class="btn btn-primary" id="btnStartRace">Go to pit wall</button>
-      </div>
-    </div>
-
-    <div class="hub-section">
-      <div class="hub-section-title">Constructors' Championship</div>
-      <table class="standings-table">
-        <thead><tr><th>Pos</th><th>Team</th><th>Points</th></tr></thead>
-        <tbody id="consTableBody"></tbody>
-      </table>
-    </div>
-
-    <div class="hub-section">
-      <div class="hub-section-title">Engineering staff</div>
-      <div class="hub-section-sub">Hiring boosts your car's underlying stats going into every race.</div>
-      <div class="roster-grid" id="rosterGrid"></div>
-      <div style="margin-top:14px;">
-        <button class="btn btn-ghost btn-sm" id="btnOpenHiring">View candidates</button>
-      </div>
-    </div>
-  `;
-
-  document.getElementById('btnStartRace').addEventListener('click', startRace);
-
-  const consBody = document.getElementById('consTableBody');
-  getConstructorsStandings().forEach((s,i)=>{
-    const t = teamById(s.teamId);
-    const tr = document.createElement('tr');
-    if(t.id===STATE.myTeamId) tr.className='me';
-    tr.innerHTML = `<td class="pos">${i+1}</td><td><span class="team-pill" style="background:${t.color}"></span>${t.abbr}</td><td class="pts">${s.points}</td>`;
-    consBody.appendChild(tr);
-  });
-
-  const rosterGrid = document.getElementById('rosterGrid');
-  Object.values(STATE.engineers).forEach(e=>{
-    const card = document.createElement('div');
-    card.className = 'eng-card';
-    card.innerHTML = `
-      <div class="eng-card-top">
-        <span class="eng-name">${e.name}</span>
-      </div>
-      <div class="eng-role" style="margin-bottom:8px;">${e.roleLabel}</div>
-      <div class="eng-bars">
-        <div class="eng-bar-row"><span style="width:50px;">Skill</span><div class="eng-bar-track"><div class="eng-bar-fill" style="width:${e.skill}%; background:${skillColor(e.skill)}"></div></div><span>${e.skill}</span></div>
-      </div>
-    `;
-    rosterGrid.appendChild(card);
-  });
-
-  document.getElementById('btnOpenHiring').addEventListener('click', openHiringModal);
-}
-
-function skillColor(skill){
-  if(skill>=85) return 'var(--green)';
-  if(skill>=65) return 'var(--cyan)';
-  if(skill>=45) return 'var(--amber)';
-  return 'var(--red)';
-}
-
-function weatherLabel(track){
-  if(track.baseline==='wet-drying') return '🌧 Starts wet, drying through race';
-  if(track.baseline==='dry-threat') return '⛅ Rain forecast to arrive';
-  return '☀️ Dry forecast';
-}
-
-function renderSeasonEndHTML(){
-  const consStandings = getConstructorsStandings();
-  const team = myTeam();
-  const myPos = consStandings.findIndex(s=>s.teamId===team.id)+1;
-  const obj = TIER_OBJECTIVES[team.tier];
-  const met = myPos <= obj.conText;
-  return `
-    <div class="hub-section">
-      <div class="hub-section-title">Season complete</div>
-      <div class="hub-section-sub">${met ? 'The board is satisfied with the results.' : 'The board is reviewing your position.'}</div>
-      <div class="next-race-card" style="border-color:${met?'var(--green)':'var(--red)'}">
-        <div class="nrc-left">
-          <div class="nrc-round" style="color:${met?'var(--green)':'var(--red)'}">${met?'OBJECTIVE MET':'OBJECTIVE MISSED'}</div>
-          <div class="nrc-name">Finished P${myPos} in Constructors &mdash; ${obj.label}</div>
+        <div class="side-block">
+          <div class="side-label">Board objective</div>
+          <div id="objectiveBox"></div>
         </div>
-        <button class="btn btn-primary" id="btnNewSeason">Start new season</button>
-      </div>
-    </div>
-    <div class="hub-section">
-      <div class="hub-section-title">Final Constructors' Championship</div>
-      <table class="standings-table">
-        <thead><tr><th>Pos</th><th>Team</th><th>Points</th></tr></thead>
-        <tbody>
-          ${consStandings.map((s,i)=>{
-            const t = teamById(s.teamId);
-            return `<tr class="${t.id===STATE.myTeamId?'me':''}"><td class="pos">${i+1}</td><td><span class="team-pill" style="background:${t.color}"></span>${t.abbr}</td><td class="pts">${s.points}</td></tr>`;
-          }).join('')}
-        </tbody>
-      </table>
-    </div>
-  `;
-}
-
-// ===================== HIRING =====================
-function generateCandidates(){
-  const team = myTeam();
-  const tierBase = { title:70, contender:58, midfield:48, backmarker:38 }[team.tier];
-  const list = [];
-  for(let i=0;i<5;i++){
-    const role = pick(ENGINEER_ROLES);
-    const skill = clamp(tierBase + rand(-10,28), 20, 99);
-    const cost = Math.round(8 + skill*0.9 + rand(-4,6));
-    list.push({
-      id: 'cand_'+Date.now()+'_'+i,
-      name: randName(),
-      role: role.key,
-      roleLabel: role.label,
-      affects: role.affects,
-      skill,
-      cost: Math.max(5,cost),
-    });
-  }
-  return list;
-}
-
-function openHiringModal(){
-  if(STATE.candidates.length===0){
-    STATE.candidates = generateCandidates();
-  }
-  renderHiringModal();
-}
-
-function renderHiringModal(){
-  const html = `
-    <h2>Engineering candidates</h2>
-    <p>Budget available: <b style="color:var(--amber)">$${STATE.budget}M</b>. Hiring a candidate replaces your current engineer in that role and adds their skill to your car.</p>
-    <div id="candidateList"></div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost btn-sm" id="btnRefreshCandidates">Refresh list ($5M)</button>
-      <button class="btn btn-primary btn-sm" id="btnCloseHiring">Done</button>
-    </div>
-  `;
-  openModal(html);
-  const list = document.getElementById('candidateList');
-  STATE.candidates.forEach(c=>{
-    const current = STATE.engineers[c.role];
-    const upgrade = c.skill > current.skill;
-    const card = document.createElement('div');
-    card.className = 'candidate-card';
-    card.innerHTML = `
-      <div class="candidate-info">
-        <div class="candidate-name">${c.name}</div>
-        <div class="candidate-role">${c.roleLabel}</div>
-        <div class="candidate-stats">
-          <span class="team-stat-mini">SKILL <b style="color:${skillColor(c.skill)}">${c.skill}</b></span>
-          <span class="team-stat-mini">CURRENT <b>${current.skill}</b></span>
-          <span class="candidate-cost">$${c.cost}M</span>
+        <div class="side-block">
+          <div class="side-label">Championship</div>
+          <div class="side-row"><span>Constructors</span><b id="sideConsPos">—</b></div>
+          <div class="side-row"><span>Drivers (lead)</span><b id="sideDrivPos">—</b></div>
+        </div>
+        <div class="side-block">
+          <div class="side-label">Car</div>
+          <div class="side-row"><span>Pace</span><b id="sidePace"></b></div>
+          <div class="side-row"><span>Reliability</span><b id="sideReli"></b></div>
         </div>
       </div>
-      <button class="btn btn-sm ${upgrade?'btn-primary':'btn-ghost'}" data-cand="${c.id}" ${STATE.budget<c.cost?'disabled':''}>${upgrade?'Hire':'Hire anyway'}</button>
-    `;
-    list.appendChild(card);
-  });
-  list.querySelectorAll('button[data-cand]').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      hireCandidate(btn.dataset.cand);
-    });
-  });
-  document.getElementById('btnCloseHiring').addEventListener('click', ()=>{
-    closeModal();
-    renderHub();
-  });
-  document.getElementById('btnRefreshCandidates').addEventListener('click', ()=>{
-    if(STATE.budget < 5) return;
-    STATE.budget -= 5;
-    STATE.candidates = generateCandidates();
-    saveGame();
-    renderHiringModal();
-  });
-}
-
-function hireCandidate(candId){
-  const c = STATE.candidates.find(x=>x.id===candId);
-  if(!c || STATE.budget < c.cost) return;
-  STATE.budget -= c.cost;
-  STATE.engineers[c.role] = { id:c.id, name:c.name, role:c.role, roleLabel:c.roleLabel, affects:c.affects, skill:c.skill };
-  recalcCarBoosts();
-  STATE.candidates = STATE.candidates.filter(x=>x.id!==candId);
-  saveGame();
-  renderHiringModal();
-}
-
-function recalcCarBoosts(){
-  // Boosts derived from engineer skill relative to a baseline of 60.
-  const aero = STATE.engineers.aero.skill;
-  const perf = STATE.engineers.perf.skill;
-  const reli = STATE.engineers.reliability.skill;
-  const strat = STATE.engineers.strategist.skill;
-  STATE.carPaceBoost = Math.round(((aero-60)+(perf-60))/2 / 6); // small integer boost
-  STATE.carReliabilityBoost = Math.round((reli-60)/6);
-  STATE.strategyBoost = Math.round((strat-60)/8); // affects decision hinting quality
-}
-
-// ===================== RACE SIMULATION =====================
-let RACE = null; // transient race state
-let raceInterval = null;
-let raceSpeed = 1;
-let racePaused = false;
-
-function startRace(){
-  const track = currentTrack();
-  RACE = buildRaceState(track);
-  showScreen('screen-race');
-  initRaceUI(track);
-  renderTower();
-  raceSpeed = 1;
-  racePaused = false;
-  setSpeedButtons();
-  runRaceLoop();
-}
-
-function buildRaceState(track){
-  // weather progression: array of "wetness" 0 (dry) to 1 (full wet) across laps, plus per-lap trackTemp
-  const laps = track.laps;
-  const wetness = computeWetnessCurve(track, laps);
-
-  const grid = buildGrid();
-
-  const drivers = grid.map((g,i)=>({
-    abbr:g.abbr, name:g.name, teamId:g.teamId, skill:g.skill, consistency:g.consistency,
-    position:i+1, startPosition:i+1,
-    gapToLeader:0, // seconds
-    lapTimeBase: 90 - (g.effPace-70)*0.15, // rough seconds per lap baseline, tuned in sim
-    tyre:'M', tyreAge:0, pitStops:0, pitHistory:[],
-    retired:false, retiredReason:null,
-    totalTime:0,
-    lastLapDelta:0,
-    strategyPending:null, // set when awaiting a decision for this driver
-  }));
-
-  return {
-    track, laps, wetness,
-    lap:0,
-    flag:'green', // green | yellow | vsc | sc | red | checkered
-    flagLapsRemaining:0,
-    drivers,
-    finished:false,
-    feed:[],
-    myTeamId: STATE.myTeamId,
-    pendingDecision:null,
-    decisionQueue:[],
-    view:'tower',
-  };
-}
-
-function computeWetnessCurve(track, laps){
-  const curve = [];
-  if(track.baseline==='wet-drying'){
-    // starts wet (1.0), dries to 0 by ~55% race distance
-    for(let l=0;l<laps;l++){
-      const t = l/laps;
-      curve.push(clamp(1 - t/0.55, 0, 1));
-    }
-  } else if(track.baseline==='dry-threat'){
-    // dry start, rain may arrive randomly between 30-75% distance
-    const rainArrives = Math.random() < track.rainChance*1.4;
-    const rainLap = rainArrives ? Math.floor(laps*randf(0.3,0.75)) : null;
-    for(let l=0;l<laps;l++){
-      if(rainLap===null || l<rainLap) curve.push(0);
-      else{
-        const t = (l-rainLap)/Math.max(6, laps*0.2);
-        curve.push(clamp(t, 0, 0.85));
-      }
-    }
-  } else{
-    const rainArrives = Math.random() < track.rainChance*0.5;
-    if(rainArrives){
-      const rainLap = Math.floor(laps*randf(0.4,0.8));
-      for(let l=0;l<laps;l++){
-        if(l<rainLap) curve.push(0);
-        else curve.push(clamp((l-rainLap)/(laps*0.15), 0, 0.7));
-      }
-    } else {
-      for(let l=0;l<laps;l++) curve.push(0);
-    }
-  }
-  return curve;
-}
-
-function buildGrid(){
-  // quali-lite: order by pace + skill + small randomness
-  const entries = [];
-  TEAMS.forEach(team=>{
-    const effPace = team.pace + (team.id===STATE.myTeamId ? STATE.carPaceBoost : 0);
-    team.drivers.forEach(drv=>{
-      const qualiScore = effPace*0.6 + drv.skill*0.4 + randf(-3,3);
-      entries.push({ abbr:drv.abbr, name:drv.name, teamId:team.id, skill:drv.skill, consistency:drv.consistency, effPace, qualiScore });
-    });
-  });
-  entries.sort((a,b)=>b.qualiScore-a.qualiScore);
-  return entries;
-}
-
-function initRaceUI(track){
-  document.getElementById('raceTrackName').textContent = `${track.name} — ${track.country}`;
-  document.getElementById('raceTrackMeta').textContent = `${track.character}`;
-  document.getElementById('lapTotal').textContent = track.laps;
-  document.getElementById('lapNow').textContent = 0;
-  updateWeatherChip();
-  setFlag('green');
-  document.getElementById('feedScroll').innerHTML = '';
-  pushFeed(0, `Lights out at ${track.name}.`, 'good');
-  document.getElementById('decisionBar').classList.remove('active');
-}
-
-function updateWeatherChip(){
-  const track = RACE.track;
-  const wet = RACE.wetness[Math.min(RACE.lap, RACE.wetness.length-1)] || 0;
-  let label;
-  if(wet>0.6) label = `🌧 Heavy rain &middot; ${track.trackTempC}°C track`;
-  else if(wet>0.15) label = `🌦 Damp, drying &middot; ${track.trackTempC}°C track`;
-  else label = `☀️ Dry &middot; ${track.trackTempC}°C track &middot; ${track.windKmh}km/h wind`;
-  document.getElementById('weatherChip').innerHTML = label;
-}
-
-function setFlag(flag){
-  RACE.flag = flag;
-  const el = document.getElementById('flagIndicator');
-  el.className = 'flag-indicator flag-'+flag;
-  const labels = {green:'Green',yellow:'Yellow',vsc:'VSC',sc:'Safety Car',red:'Red Flag',checkered:'Finished'};
-  el.textContent = labels[flag] || flag;
-}
-
-function flashBanner(text, kind){
-  const b = document.getElementById('bannerFlash');
-  b.textContent = text;
-  b.className = 'banner-flash show banner-'+kind;
-  setTimeout(()=>{ b.classList.remove('show'); }, 2200);
-}
-
-// ---- view toggle ----
-document.getElementById('viewTowerBtn').addEventListener('click', ()=>{
-  document.getElementById('viewTowerBtn').classList.add('active');
-  document.getElementById('viewTrackBtn').classList.remove('active');
-  document.getElementById('towerWrap').style.display='block';
-  document.getElementById('trackWrap').style.display='none';
-});
-document.getElementById('viewTrackBtn').addEventListener('click', ()=>{
-  document.getElementById('viewTrackBtn').classList.add('active');
-  document.getElementById('viewTowerBtn').classList.remove('active');
-  document.getElementById('towerWrap').style.display='none';
-  document.getElementById('trackWrap').style.display='flex';
-  drawTrackView();
-});
-
-// ---- speed controls ----
-function setSpeedButtons(){
-  ['speedPause','speed1','speed2','speed4'].forEach(id=>document.getElementById(id).classList.remove('active'));
-  if(racePaused) document.getElementById('speedPause').classList.add('active');
-  else if(raceSpeed===1) document.getElementById('speed1').classList.add('active');
-  else if(raceSpeed===2) document.getElementById('speed2').classList.add('active');
-  else if(raceSpeed===4) document.getElementById('speed4').classList.add('active');
-}
-document.getElementById('speedPause').addEventListener('click', ()=>{ racePaused=true; setSpeedButtons(); });
-document.getElementById('speed1').addEventListener('click', ()=>{ racePaused=false; raceSpeed=1; setSpeedButtons(); });
-document.getElementById('speed2').addEventListener('click', ()=>{ racePaused=false; raceSpeed=2; setSpeedButtons(); });
-document.getElementById('speed4').addEventListener('click', ()=>{ racePaused=false; raceSpeed=4; setSpeedButtons(); });
-
-function runRaceLoop(){
-  if(raceInterval) clearInterval(raceInterval);
-  // Total race compressed to ~5 minutes of real time at 1x => tick interval scales with lap count.
-  const track = RACE.track;
-  const totalMs = 5*60*1000;
-  const baseTickMs = totalMs/track.laps;
-  raceInterval = setInterval(()=>{
-    if(racePaused || RACE.pendingDecision){ return; }
-    for(let i=0;i<raceSpeed;i++){
-      if(RACE.finished) break;
-      simulateLap();
-    }
-    renderTower();
-    if(document.getElementById('trackWrap').style.display!=='none') drawTrackView();
-    if(RACE.finished){
-      clearInterval(raceInterval);
-      setTimeout(showRaceResults, 700);
-    }
-  }, baseTickMs); // fixed tick rate; raceSpeed controls how many laps simulate per tick
-}
-
-// ===================== LAP SIMULATION =====================
-function simulateLap(){
-  // During a red flag, the field is stopped: don't advance the lap counter or age tyres,
-  // just let the flagLapsRemaining/resume timer (set in startRedFlag) play out.
-  if(RACE.flag==='red') return;
-
-  RACE.lap++;
-  const track = RACE.track;
-  const wet = RACE.wetness[Math.min(RACE.lap-1, RACE.wetness.length-1)] || 0;
-  document.getElementById('lapNow').textContent = RACE.lap;
-  updateWeatherChip();
-
-  // Handle flag countdowns
-  if(RACE.flag==='vsc' || RACE.flag==='sc' || RACE.flag==='yellow'){
-    RACE.flagLapsRemaining--;
-    if(RACE.flagLapsRemaining<=0){
-      setFlag('green');
-      pushFeed(RACE.lap, `Track clear. Green flag.`, 'good');
-      flashBanner('Green Flag', 'green');
-    }
-  }
-
-  // Wet/dry transition announcement
-  announceWeatherShift(wet);
-
-  const active = RACE.drivers.filter(d=>!d.retired);
-
-  // compute lap times
-  active.forEach(d=>{
-    d.lastLapDelta = computeLapTime(d, track, wet);
-    d.totalTime += d.lastLapDelta;
-    d.tyreAge++;
-  });
-
-  // reliability / crash incidents
-  checkIncidents(active);
-
-  // reorder by totalTime
-  RACE.drivers.sort((a,b)=>{
-    if(a.retired && !b.retired) return 1;
-    if(!a.retired && b.retired) return -1;
-    if(a.retired && b.retired) return (a.retiredLap||0)-(b.retiredLap||0);
-    return a.totalTime-b.totalTime;
-  });
-  const leaderTime = RACE.drivers.find(d=>!d.retired)?.totalTime || 0;
-  RACE.drivers.forEach((d,i)=>{
-    const prevPos = d.position;
-    d.position = i+1;
-    d.moveDir = d.retired ? null : (d.position<prevPos?'up':(d.position>prevPos?'down':null));
-    if(!d.retired) d.gapToLeader = d.totalTime-leaderTime;
-  });
-
-  // AI pit stops for non-player-controlled cars (simple heuristic)
-  active.forEach(d=>{
-    if(d.retired) return;
-    maybeAIPitStop(d, track, wet);
-  });
-
-  // player strategy decision hooks
-  maybeQueuePlayerDecision(active, track, wet);
-
-  // random VSC/SC/red flag triggers not tied to a specific car (track-based)
-  maybeRandomFlagEvent(track);
-
-  if(RACE.lap >= RACE.laps){
-    finishRace();
-  }
-}
-
-function announceWeatherShift(wet){
-  if(RACE._lastWetBand===undefined) RACE._lastWetBand = wet>0.5?'wet':(wet>0.1?'damp':'dry');
-  const band = wet>0.5?'wet':(wet>0.1?'damp':'dry');
-  if(band!==RACE._lastWetBand){
-    if(band==='wet') { pushFeed(RACE.lap, `Rain intensifying — track is wet.`, 'flag'); flashBanner('Rain Falling', 'yellow'); }
-    else if(band==='damp' && RACE._lastWetBand==='dry'){ pushFeed(RACE.lap, `Spots of rain on track.`, 'flag'); flashBanner('Rain Starting', 'yellow'); }
-    else if(band==='damp' && RACE._lastWetBand==='wet'){ pushFeed(RACE.lap, `Track beginning to dry.`, 'good'); }
-    else if(band==='dry'){ pushFeed(RACE.lap, `Track fully dry now.`, 'good'); }
-    RACE._lastWetBand = band;
-  }
-}
-
-function computeLapTime(d, track, wet){
-  const team = teamById(d.teamId);
-  const effPace = team.pace + (team.id===STATE.myTeamId ? STATE.carPaceBoost : 0);
-  const comp = COMPOUNDS[d.tyre];
-
-  // base pace: higher effPace/skill = lower lap time
-  let base = 100 - (effPace*0.35 + d.skill*0.25);
-
-  // tyre grip falloff with age
-  const degPenalty = comp.degRate * d.tyreAge * 0.045;
-
-  // temperature window mismatch penalty
-  let tempPenalty = 0;
-  const trackTemp = track.trackTempC;
-  if(trackTemp < comp.tempMin) tempPenalty = (comp.tempMin-trackTemp)*0.04;
-  else if(trackTemp > comp.tempMax) tempPenalty = (trackTemp-comp.tempMax)*0.03;
-
-  // Las Vegas / cold track special case: tyres struggle to warm up early in stint
-  if(track.trackTempC < 18 && d.tyreAge < 3 && !comp.wet){
-    tempPenalty += (3-d.tyreAge)*0.15;
-  }
-
-  // wet mismatch: slicks on wet track = huge penalty; wets on dry = moderate penalty
-  let wetPenalty = 0;
-  if(wet > 0.15 && !comp.wet){
-    wetPenalty = wet*3.2; // slicks in the rain, severe
-  } else if(wet <= 0.1 && comp.wet){
-    wetPenalty = 1.4; // wets on a drying/dry track, overheat and slow
-  } else if(comp.wet && wet>0.15){
-    // right tyre for conditions, small penalty if not ideal wet tyre for wetness level
-    if(d.tyre==='I' && wet>0.6) wetPenalty = (wet-0.6)*2.0; // inters in heavy rain
-    if(d.tyre==='W' && wet<0.35) wetPenalty = (0.35-wet)*2.5; // full wets on light dampness
-  }
-
-  // driving randomness (consistency lowers variance)
-  const variance = randf(-1,1) * (1 - d.consistency/140);
-
-  // flag state
-  let flagMult = 1;
-  if(RACE.flag==='vsc') flagMult = 1.35;
-  else if(RACE.flag==='sc') flagMult = 1.55;
-  // red flag: simulateLap() returns early before this is ever called
-
-  let lapTime = (base + degPenalty + tempPenalty + wetPenalty + variance);
-  lapTime *= flagMult;
-  return Math.max(lapTime, 5);
-}
-
-function checkIncidents(active){
-  const team0 = myTeam();
-  active.forEach(d=>{
-    if(d.retired) return;
-    const team = teamById(d.teamId);
-    const effReli = team.reliability + (team.id===STATE.myTeamId?STATE.carReliabilityBoost:0);
-    // Mechanical DNF chance per lap, higher for lower reliability
-    const failChance = (100-effReli) * 0.0006;
-    // Crash chance influenced by low consistency + wet conditions + old tyres
-    const wet = RACE.wetness[Math.min(RACE.lap-1,RACE.wetness.length-1)]||0;
-    const crashChance = (100-d.consistency)*0.00025 + wet*0.0022 + (d.tyreAge>28?0.0012:0);
-
-    const roll = Math.random();
-    if(roll < failChance){
-      retireDriver(d, 'mechanical');
-    } else if(roll < failChance + crashChance){
-      retireDriver(d, 'crash');
-    }
-  });
-}
-
-function retireDriver(d, reason){
-  d.retired = true;
-  d.retiredReason = reason;
-  d.retiredLap = RACE.lap;
-  const label = reason==='mechanical' ? 'retires with mechanical failure' : 'crashes out';
-  pushFeed(RACE.lap, `<b>${d.abbr}</b> ${label}!`, 'danger');
-  flashBanner(reason==='crash' ? 'Crash!' : 'Mechanical Failure', 'red');
-
-  // trigger flag response
-  triggerFlagForIncident(reason);
-}
-
-function triggerFlagForIncident(reason){
-  if(RACE.flag==='red') return;
-  const roll = Math.random();
-  if(reason==='crash'){
-    if(roll < 0.18){
-      startRedFlag();
-    } else if(roll < 0.55){
-      startSafetyCar();
-    } else {
-      startVSC();
-    }
-  } else {
-    if(roll < 0.35) startVSC();
-    else pushFeed(RACE.lap, `Yellow flag in the affected sector.`, 'flag');
-  }
-}
-
-function startVSC(){
-  if(RACE.flag==='sc'||RACE.flag==='red') return;
-  setFlag('vsc');
-  RACE.flagLapsRemaining = rand(2,4);
-  pushFeed(RACE.lap, `Virtual Safety Car deployed.`, 'flag');
-  flashBanner('Virtual Safety Car', 'yellow');
-}
-function startSafetyCar(){
-  setFlag('sc');
-  RACE.flagLapsRemaining = rand(3,6);
-  pushFeed(RACE.lap, `Safety Car deployed.`, 'flag');
-  flashBanner('Safety Car', 'yellow');
-}
-function startRedFlag(){
-  setFlag('red');
-  RACE.flagLapsRemaining = 1;
-  pushFeed(RACE.lap, `RED FLAG — session stopped.`, 'danger');
-  flashBanner('Red Flag', 'red');
-  // resume as SC restart next tick
-  setTimeout(()=>{
-    if(RACE.finished) return;
-    setFlag('sc');
-    RACE.flagLapsRemaining = 2;
-    pushFeed(RACE.lap, `Race resumes behind the Safety Car.`, 'good');
-  }, 1800);
-}
-
-function maybeRandomFlagEvent(track){
-  if(RACE.flag!=='green') return;
-  // Some circuits carry inherent SC/VSC frequency (street circuits, walls) independent of crashes
-  const streetFactor = /street|wall/i.test(track.character) ? 0.004 : 0.0012;
-  if(Math.random() < streetFactor){
-    if(Math.random()<0.3) startSafetyCar(); else startVSC();
-    pushFeed(RACE.lap, `Debris on track triggers a caution.`, 'flag');
-  }
-}
-
-// ===================== PIT STOPS & STRATEGY =====================
-function maybeAIPitStop(d, track, wet){
-  if(d.teamId===STATE.myTeamId) return; // player cars handled via decisions
-  if(RACE.lap < 3) return;
-  const comp = COMPOUNDS[d.tyre];
-  const stintLen = d.tyreAge;
-  const wantsWet = wet>0.35 && !comp.wet;
-  const wantsSlickBack = wet<0.12 && comp.wet;
-  const tyreWorn = stintLen > (comp.degRate>1.8 ? rand(14,20) : rand(22,32));
-  const lastLapsNoPit = (track.laps - RACE.lap) < 3;
-
-  if(lastLapsNoPit) return;
-
-  if(wantsWet || wantsSlickBack || tyreWorn){
-    const newTyre = wantsWet ? (wet>0.6?'W':'I') : (wantsSlickBack ? pick(['M','H']) : pick(['M','H']));
-    doPitStop(d, newTyre, track);
-  }
-}
-
-function doPitStop(d, newTyre, track){
-  d.pitStops++;
-  d.tyre = newTyre;
-  d.tyreAge = 0;
-  d.pitHistory.push({lap:RACE.lap, tyre:newTyre});
-  // pit loss time baked into totalTime as a one-off penalty next lap calc
-  d.totalTime += 21 + randf(-1.5,2.5); // pitlane loss seconds
-  pushFeed(RACE.lap, `<b>${d.abbr}</b> pits — fits ${COMPOUNDS[newTyre].name}.`, null);
-}
-
-// ---- Player decision system ----
-function maybeQueuePlayerDecision(active, track, wet){
-  if(RACE.pendingDecision) return;
-  if(RACE.lap < 3) return;
-  const myDrivers = active.filter(d=>d.teamId===STATE.myTeamId && !d.strategyPending);
-  if(myDrivers.length===0) return;
-
-  const lastLapsNoPit = (track.laps - RACE.lap) < 3;
-  if(lastLapsNoPit) return;
-
-  for(const d of myDrivers){
-    const comp = COMPOUNDS[d.tyre];
-    const wantsWetChange = (wet>0.3 && !comp.wet) || (wet<0.12 && comp.wet);
-    const tyreCliff = d.tyreAge > (comp.degRate>1.8 ? rand(16,20) : rand(24,30));
-    const randomCall = Math.random() < 0.006; // occasional proactive strategy check-in
-
-    if(wantsWetChange || tyreCliff || randomCall){
-      queueDecision(d, track, wet, wantsWetChange ? 'weather' : (tyreCliff ? 'wear' : 'routine'));
-      break; // one at a time
-    }
-  }
-}
-
-function queueDecision(driver, track, wet, reason){
-  driver.strategyPending = true;
-  RACE.pendingDecision = { driver, track, wet, reason };
-  renderDecisionBar();
-}
-
-function renderDecisionBar(){
-  const { driver, track, wet, reason } = RACE.pendingDecision;
-  const bar = document.getElementById('decisionBar');
-  bar.classList.add('active');
-
-  const reasonText = {
-    weather: wet>0.3 ? 'Track is wetting up — race engineer wants a call on tyres.' : 'Track is drying — time to consider slicks.',
-    wear: `${COMPOUNDS[driver.tyre].name} tyres on lap ${driver.tyreAge} are dropping off.`,
-    routine: `Strategy window open for ${driver.abbr}.`,
-  };
-  document.getElementById('decisionTitle').textContent = `${driver.abbr} — Pit Wall Call`;
-  document.getElementById('decisionSub').textContent = reasonText[reason];
-
-  const options = buildDecisionOptions(driver, track, wet);
-  const wrap = document.getElementById('decisionOptions');
-  wrap.innerHTML = '';
-  options.forEach(opt=>{
-    const btn = document.createElement('button');
-    btn.className = 'decision-opt';
-    btn.innerHTML = `<div class="decision-opt-title">${opt.title}</div><div class="decision-opt-desc">${opt.desc}</div>`;
-    btn.addEventListener('click', ()=>resolveDecision(driver, opt));
-    wrap.appendChild(btn);
-  });
-}
-
-function buildDecisionOptions(driver, track, wet){
-  const opts = [];
-  if(wet>0.3){
-    opts.push({ title:'Box for Intermediates', desc:'Balanced grip for a damp/wet track.', action:'pit', tyre:'I' });
-    if(wet>0.6) opts.push({ title:'Box for Full Wets', desc:'Maximum wet-weather grip, slower in the dry.', action:'pit', tyre:'W' });
-    opts.push({ title:'Stay out', desc:'Risk it on current tyres — could be costly if rain builds.', action:'stay' });
-  } else if(wet<0.12 && COMPOUNDS[driver.tyre].wet){
-    opts.push({ title:'Box for Mediums', desc:'Balanced slick tyre for the now-dry track.', action:'pit', tyre:'M' });
-    opts.push({ title:'Box for Hards', desc:'Durable, slower out the gate, better long run.', action:'pit', tyre:'H' });
-    opts.push({ title:'Stay out', desc:'Risk it if you think more rain is coming.', action:'stay' });
-  } else {
-    opts.push({ title:'Box for Softs', desc:'Fast but short-lived — good for a late attack.', action:'pit', tyre:'S' });
-    opts.push({ title:'Box for Mediums', desc:'Balanced pace and durability.', action:'pit', tyre:'M' });
-    opts.push({ title:'Box for Hards', desc:'Track position play — go long.', action:'pit', tyre:'H' });
-    opts.push({ title:'Stay out', desc:'Extend the stint on current tyres.', action:'stay' });
-  }
-  return opts;
-}
-
-function resolveDecision(driver, opt){
-  RACE.pendingDecision = null;
-  driver.strategyPending = false;
-  document.getElementById('decisionBar').classList.remove('active');
-  if(opt.action==='pit'){
-    doPitStop(driver, opt.tyre, RACE.track);
-  } else {
-    pushFeed(RACE.lap, `<b>${driver.abbr}</b> stays out on ${COMPOUNDS[driver.tyre].name}.`, null);
-  }
-}
-
-// ===================== RENDERING: TOWER / FEED / TRACK =====================
-function pushFeed(lap, html, kind){
-  RACE.feed.push({lap, html, kind});
-  const scroll = document.getElementById('feedScroll');
-  const item = document.createElement('div');
-  item.className = 'feed-item' + (kind ? ' '+kind : '');
-  item.innerHTML = `<span class="feed-lap">L${lap}</span>${html}`;
-  scroll.appendChild(item);
-  if(scroll.children.length>150) scroll.removeChild(scroll.firstChild);
-}
-
-function renderTower(){
-  const body = document.getElementById('towerBody');
-  body.innerHTML = '';
-  RACE.drivers.forEach(d=>{
-    const team = teamById(d.teamId);
-    const row = document.createElement('div');
-    row.className = 'tt-row' + (d.teamId===STATE.myTeamId?' me':'') + (d.retired?' retired':'') + (d.moveDir==='up'?' moved-up':d.moveDir==='down'?' moved-down':'');
-    const gapText = d.retired ? (d.retiredReason==='crash'?'DNF-CR':'DNF-MEC') : (d.position===1 ? 'LEADER' : '+'+d.gapToLeader.toFixed(1)+'s');
-    row.innerHTML = `
-      <span class="tt-pos">${d.position}</span>
-      <span class="tt-driver"><span class="tt-team-pill" style="background:${team.color}"></span><span class="tt-driver-abbr">${d.abbr}</span></span>
-      <span class="tt-gap">${gapText}</span>
-      <span class="tt-tyre tyre-${d.tyre}">${d.tyre}</span>
-      <span class="tt-tyreage">${d.retired?'':d.tyreAge+'L'}</span>
-      <span class="tt-pits">${d.pitStops}</span>
-      <span></span>
-    `;
-    body.appendChild(row);
-  });
-}
-
-function drawTrackView(){
-  const canvas = document.getElementById('trackCanvas');
-  const ctx = canvas.getContext('2d');
-  const w = canvas.width, h = canvas.height;
-  ctx.clearRect(0,0,w,h);
-
-  // Simple oval-ish track path (stylized, not geographically accurate)
-  const cx=w/2, cy=h/2, rx=w*0.36, ry=h*0.32;
-  ctx.strokeStyle = '#2A2F38';
-  ctx.lineWidth = 26;
-  ctx.beginPath();
-  ctx.ellipse(cx,cy,rx,ry,0,0,Math.PI*2);
-  ctx.stroke();
-
-  ctx.strokeStyle = '#12151A';
-  ctx.lineWidth = 2;
-  ctx.setLineDash([8,8]);
-  ctx.beginPath();
-  ctx.ellipse(cx,cy,rx,ry,0,0,Math.PI*2);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  const active = RACE.drivers.filter(d=>!d.retired);
-  const maxGap = Math.max(1, ...active.map(d=>d.gapToLeader));
-  active.forEach(d=>{
-    const team = teamById(d.teamId);
-    // place car around ellipse based on gap fraction (leader at top, others trailing around)
-    const frac = maxGap>0 ? (d.gapToLeader/maxGap) : 0;
-    const angle = -Math.PI/2 + frac*Math.PI*1.7 + (d.position*0.02);
-    const x = cx + rx*Math.cos(angle);
-    const y = cy + ry*Math.sin(angle);
-    ctx.beginPath();
-    ctx.arc(x,y,d.teamId===STATE.myTeamId?7:5,0,Math.PI*2);
-    ctx.fillStyle = team.color;
-    ctx.fill();
-    if(d.teamId===STATE.myTeamId){
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-    }
-    ctx.fillStyle = '#EDEAE2';
-    ctx.font = '10px JetBrains Mono, monospace';
-    ctx.fillText(d.abbr, x+9, y+3);
-  });
-
-  ctx.fillStyle = '#565D6A';
-  ctx.font = '11px JetBrains Mono, monospace';
-  ctx.fillText(`${RACE.track.name} — Lap ${RACE.lap}/${RACE.laps}`, 14, 20);
-}
-
-// ===================== RACE FINISH =====================
-const POINTS_TABLE = [25,18,15,12,10,8,6,4,2,1];
-
-function finishRace(){
-  RACE.finished = true;
-  setFlag('checkered');
-  pushFeed(RACE.lap, `Checkered flag.`, 'good');
-}
-
-function showRaceResults(){
-  const classified = RACE.drivers.filter(d=>!d.retired);
-  const dnf = RACE.drivers.filter(d=>d.retired);
-  const results = [...classified, ...dnf];
-
-  // award points
-  results.forEach((d,i)=>{
-    const pts = i<POINTS_TABLE.length && !d.retired ? POINTS_TABLE[i] : 0;
-    STATE.driversPoints[d.abbr] = (STATE.driversPoints[d.abbr]||0) + pts;
-    STATE.constructorsPoints[d.teamId] = (STATE.constructorsPoints[d.teamId]||0) + pts;
-  });
-
-  STATE.raceLog.push({
-    track: RACE.track.id,
-    results: results.map((d,i)=>({abbr:d.abbr, pos:i+1, retired:d.retired})),
-  });
-
-  STATE.round++;
-  saveGame();
-
-  renderResultsModal(results);
-}
-
-function renderResultsModal(results){
-  const team = myTeam();
-  const rows = results.map((d,i)=>{
-    const t = teamById(d.teamId);
-    const statusText = d.retired ? (d.retiredReason==='crash'?'DNF (crash)':'DNF (mechanical)') : `P${i+1}`;
-    const pts = i<POINTS_TABLE.length && !d.retired ? POINTS_TABLE[i] : 0;
-    return `<div class="side-row" style="border-bottom:1px solid var(--line); padding:8px 0;">
-      <span><span class="team-pill" style="background:${t.color}"></span>${d.abbr} ${t.id===STATE.myTeamId?'&larr;':''}</span>
-      <b>${statusText}${pts?` (+${pts})`:''}</b>
-    </div>`;
-  }).join('');
-
-  const html = `
-    <h2>Race Result — ${RACE.track.name}</h2>
-    <div style="max-height:340px; overflow-y:auto; margin:14px 0;">${rows}</div>
-    <div class="modal-actions">
-      <button class="btn btn-primary btn-sm" id="btnBackToHub">Back to pit wall</button>
+      <div class="hub-main" id="hubMain"></div>
     </div>
-  `;
-  openModal(html);
-  document.getElementById('btnBackToHub').addEventListener('click', ()=>{
-    closeModal();
-    if(raceInterval) clearInterval(raceInterval);
-    enterHub();
-  });
-}
+  </div>
 
-// ===================== BOOT =====================
-(function boot(){
-  const saved = loadGame();
-  if(saved){
-    STATE = saved;
-    enterHub();
-  } else {
-    showScreen('screen-intro');
-  }
-})();
+  <div class="screen" id="screen-weekend">
+    <div class="wk-header">
+      <div>
+        <div class="wk-round" id="wkRound"></div>
+        <div class="wk-track" id="wkTrack"></div>
+        <div class="wk-meta" id="wkMeta"></div>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="wkBackBtn">← Back to hub</button>
+    </div>
+    <div class="wk-body" id="wkBody"></div>
+  </div>
+
+  <div class="screen" id="screen-race">
+    <div class="topbar race-topbar">
+      <div>
+        <div class="race-track-name" id="raceTrackName"></div>
+        <div class="race-track-meta" id="raceTrackMeta"></div>
+      </div>
+      <div class="flag-indicator flag-green" id="flagIndicator">Green</div>
+      <div class="lap-counter">LAP <b id="lapNow">0</b>/<span id="lapTotal">0</span></div>
+      <div class="weather-chip" id="weatherChip"></div>
+      <div class="race-view-toggle">
+        <button class="rvt-btn active" id="viewTowerBtn">Tower</button>
+        <button class="rvt-btn" id="viewTrackBtn">Track</button>
+      </div>
+      <div class="race-controls">
+        <button class="speed-btn" id="speedPause">Pause</button>
+        <button class="speed-btn active" id="speed1">1x</button>
+        <button class="speed-btn" id="speed2">2x</button>
+        <button class="speed-btn" id="speed4">4x</button>
+      </div>
+    </div>
+    <div class="race-body">
+      <div id="towerWrap" class="timing-tower">
+        <div class="tt-header">
+          <span>P</span><span>DRV</span><span>INTERVAL</span><span>TYRE</span><span>AGE</span><span>PITS</span><span></span>
+        </div>
+        <div id="towerBody"></div>
+      </div>
+      <div id="trackWrap" class="track-view" style="display:none;">
+        <canvas id="trackCanvas" width="720" height="500"></canvas>
+      </div>
+      <div class="feed-panel">
+        <div class="feed-header">Race Feed</div>
+        <div class="feed-scroll" id="feedScroll"></div>
+      </div>
+    </div>
+    <div class="decision-bar" id="decisionBar">
+      <div class="decision-title"><span class="pulse-dot"></span><span id="decisionTitle"></span></div>
+      <div class="decision-sub" id="decisionSub"></div>
+      <div class="decision-options" id="decisionOptions"></div>
+    </div>
+  </div>
+
+</div>
+
+<div class="banner-flash" id="bannerFlash"></div>
+<div class="modal-overlay" id="modalOverlay"><div class="modal" id="modalContent"></div></div>
+
+<script src="data.js"></script>
+<script src="game.js"></script>
+<script src="weekend.js"></script>
+</body>
+</html>
