@@ -1,6 +1,4 @@
 // ===================== RACE WEEKEND FLOW =====================
-// FP1/FP2/FP3 → Qualifying → Strategy approval → Race
-
 let WEEKEND = null;
 
 function startWeekend(){
@@ -9,10 +7,10 @@ function startWeekend(){
     track,
     fp: [],
     quali: null,
-    strategy: {}, // abbr -> { tyre, plan, orders }
+    qualiStage: null, // null | 'q1' | 'q2' | 'q3'
+    strategy: {},
     stage: 'fp',
   };
-  // init default strategies for player drivers
   myTeam().drivers.forEach(d=>{
     WEEKEND.strategy[d.abbr] = { tyre: 'M', plan: '1-stop', orders: 'fight' };
   });
@@ -28,17 +26,13 @@ function renderWeekend(){
 
   const body = document.getElementById('wkBody');
   body.innerHTML = '';
-
-  // FP block
   body.appendChild(buildFpBlock());
-  // Quali block
   body.appendChild(buildQualiBlock());
-  // Strategy block
   body.appendChild(buildStrategyBlock());
-  // Go racing
   body.appendChild(buildGoRacingBlock());
 }
 
+// ---------- Practice ----------
 function buildFpBlock(){
   const done = WEEKEND.fp.length > 0;
   const el = document.createElement('div');
@@ -47,105 +41,139 @@ function buildFpBlock(){
     <div class="wk-step-header"><span><span class="step-num">01</span>Practice — FP1 / FP2 / FP3</span>
       <span>${done?'✓ Complete':''}</span></div>
     <div class="wk-step-body">
-      <p class="dim small" style="margin-bottom:10px">Run practice to gather tyre data and reveal setup issues. 2 seconds per session.</p>
-      ${done ? `
-        <div class="wk-log">
-          ${WEEKEND.fp.map(f=>`<div class="${f.cls}">${f.text}</div>`).join('')}
-        </div>
-      ` : `<button class="btn btn-primary btn-sm" id="btnRunFp">Run practice</button>`}
+      <p class="dim small" style="margin-bottom:10px">Run practice to gather tyre data and reveal setup issues.</p>
+      ${done ? `<div class="wk-log">${WEEKEND.fp.map(f=>`<div class="${f.cls}">${f.text}</div>`).join('')}</div>`
+             : `<button class="btn btn-primary btn-sm" id="btnRunFp">Run practice</button>`}
     </div>
   `;
-  if(!done){
-    setTimeout(()=>{
-      document.getElementById('btnRunFp')?.addEventListener('click', runFp);
-    }, 0);
-  }
+  if(!done) setTimeout(()=>document.getElementById('btnRunFp')?.addEventListener('click', runFp), 0);
   return el;
 }
-
 function runFp(){
   const track = WEEKEND.track;
   const log = [];
-  const sessions = ['FP1','FP2','FP3'];
-  sessions.forEach(s=>{
-    // Track evolution over sessions
-    const tempShift = Math.round(randf(-3,3));
-    log.push({ text:`${s}: green light. Track ${track.trackTempC + tempShift}°C.`, cls:'' });
-    if(Math.random() < 0.2){
-      log.push({ text:`${s}: rain spotted in sector ${rand(1,3)}.`, cls:'warn' });
-    }
-    // Occasional incident
-    const someone = pick(RACE_drivers_flat());
-    if(Math.random() < 0.12){
-      log.push({ text:`${s}: ${someone.abbr} spins at Turn ${rand(3,12)} — no damage.`, cls:'warn' });
-    }
-    if(Math.random() < 0.06){
-      log.push({ text:`${s}: ${someone.abbr} causes a red flag after stopping on track.`, cls:'bad' });
-    }
-    // Reveal useful info: top pace per team
+  ['FP1','FP2','FP3'].forEach(s=>{
+    const shift = Math.round(randf(-3,3));
+    log.push({ text:`${s}: green light. Track ${track.trackTempC + shift}°C.`, cls:'' });
+    if(Math.random() < 0.2) log.push({ text:`${s}: rain spotted in sector ${rand(1,3)}.`, cls:'warn' });
+    const someone = pick(TEAMS.flatMap(t=>t.drivers));
+    if(Math.random() < 0.12) log.push({ text:`${s}: ${someone.abbr} spins at Turn ${rand(3,12)} — no damage.`, cls:'warn' });
+    if(Math.random() < 0.05) log.push({ text:`${s}: ${someone.abbr} brings out a red flag briefly.`, cls:'bad' });
     if(s==='FP3'){
       const top = TEAMS.map(t=>({t, pace: t.pace + (t.id===STATE.myTeamId?STATE.carPaceBoost:0)})).sort((a,b)=>b.pace-a.pace).slice(0,3);
       log.push({ text:`FP3: pace order suggests ${top.map(x=>x.t.abbr).join(' > ')} at the front.`, cls:'good' });
     }
   });
-  // Wet-drying forecast hint
   if(track.baseline==='wet-drying') log.push({ text:'Forecast: race starts WET and will dry out.', cls:'warn' });
   if(track.baseline==='dry-threat') log.push({ text:'Forecast: dry start, rain could arrive mid-race.', cls:'warn' });
   if(track.trackTempC < 18) log.push({ text:'Cold track — softer compounds may struggle for warm-up.', cls:'warn' });
   if(track.trackTempC > 40) log.push({ text:'Hot, abrasive surface — high degradation expected.', cls:'warn' });
-
   WEEKEND.fp = log;
   renderWeekend();
 }
 
-function RACE_drivers_flat(){
-  return TEAMS.flatMap(t=>t.drivers);
-}
-
+// ---------- Qualifying (3 stages) ----------
 function buildQualiBlock(){
   const done = !!WEEKEND.quali;
   const locked = WEEKEND.fp.length === 0;
   const el = document.createElement('div');
   el.className = 'wk-step' + (done?' done':'') + (locked?' locked':'');
+
+  let stageButton = '';
+  if(!locked && !done){
+    if(!WEEKEND.qualiStage) stageButton = `<button class="btn btn-primary btn-sm" id="btnRunQ1">Run Q1</button>`;
+    else if(WEEKEND.qualiStage==='q1') stageButton = `<button class="btn btn-primary btn-sm" id="btnRunQ2">Run Q2</button>`;
+    else if(WEEKEND.qualiStage==='q2') stageButton = `<button class="btn btn-primary btn-sm" id="btnRunQ3">Run Q3</button>`;
+  }
   el.innerHTML = `
     <div class="wk-step-header"><span><span class="step-num">02</span>Qualifying — Q1 / Q2 / Q3</span>
       <span>${done?'✓ Complete':locked?'Locked':''}</span></div>
     <div class="wk-step-body">
-      <p class="dim small" style="margin-bottom:10px">Full quali simulation. Sets the grid for the race.</p>
-      ${done ? `
-        <div class="wk-log" style="max-height:280px">
-          <div class="good">Grid set.</div>
-          ${WEEKEND.quali.grid.slice(0,10).map((g,i)=>`<div>P${i+1} ${g.abbr} (${teamById(g.teamId).abbr})</div>`).join('')}
-          <div style="margin-top:6px;color:var(--dimmer)">…and so on back to P22.</div>
-        </div>
-      ` : `<button class="btn btn-primary btn-sm" id="btnRunQuali" ${locked?'disabled':''}>Run qualifying</button>`}
+      <p class="dim small" style="margin-bottom:10px">Q1: 22 cars → 15 advance. Q2: 15 → 10. Q3: shootout for grid.</p>
+      ${WEEKEND.qualiStage || done ? `<div class="wk-log" id="qualiLog">${renderQualiLog()}</div>` : ''}
+      <div style="margin-top:10px">${stageButton}</div>
     </div>
   `;
-  if(!done && !locked){
+  if(!locked && !done){
     setTimeout(()=>{
-      document.getElementById('btnRunQuali')?.addEventListener('click', runQuali);
+      document.getElementById('btnRunQ1')?.addEventListener('click', ()=>runQualiStage('q1'));
+      document.getElementById('btnRunQ2')?.addEventListener('click', ()=>runQualiStage('q2'));
+      document.getElementById('btnRunQ3')?.addEventListener('click', ()=>runQualiStage('q3'));
     }, 0);
   }
   return el;
 }
 
-function runQuali(){
-  // Build grid with slight quali-specific randomness
-  const entries = [];
-  TEAMS.forEach(team=>{
-    const effPace = team.pace + (team.id===STATE.myTeamId?STATE.carPaceBoost:0) + (team.id===STATE.myTeamId?(STATE.upgrades.aero+STATE.upgrades.pu)*2:0);
-    team.drivers.forEach(drv=>{
-      const score = effPace*0.65 + drv.skill*0.35 + randf(-4,4);
-      entries.push({ abbr:drv.abbr, name:drv.name, teamId:team.id, skill:drv.skill, consistency:drv.consistency, effPace, qualiScore:score });
-    });
-  });
-  entries.sort((a,b)=>b.qualiScore-a.qualiScore);
-  WEEKEND.quali = { grid: entries };
-  renderWeekend();
+function renderQualiLog(){
+  if(!WEEKEND.qualiStage){
+    return '';
+  }
+  if(!WEEKEND.quali){
+    // Stage in progress, show partial
+    return '<div>Awaiting stage results...</div>';
+  }
+  return WEEKEND.quali.log || '';
 }
 
+function runQualiStage(stage){
+  const track = WEEKEND.track;
+  const lines = [];
+  const allDrivers = TEAMS.flatMap(t=>t.drivers.map(d=>({ ...d, teamId:t.id, teamPace:t.pace + (t.id===STATE.myTeamId?STATE.carPaceBoost:0) + (t.id===STATE.myTeamId?(STATE.upgrades.aero+STATE.upgrades.pu)*2:0) })));
+
+  if(stage==='q1'){
+    const times = allDrivers.map(d=>({ ...d, time: 100 - (d.teamPace*0.35 + d.skill*0.25) + randf(-0.6,0.6) }))
+      .sort((a,b)=>a.time-b.time);
+    const advancing = times.slice(0,15);
+    const out = times.slice(15);
+    lines.push(`<div class="good">Q1 complete. ${out.length} eliminated.</div>`);
+    out.forEach(d=> lines.push(`<div class="bad">OUT: P${times.indexOf(d)+1} ${d.abbr} (${d.teamId.toUpperCase()}) ${d.time.toFixed(2)}</div>`));
+    advancing.slice(0,5).forEach((d,i)=> lines.push(`<div>P${i+1} ${d.abbr} ${d.time.toFixed(2)}</div>`));
+    lines.push('<div class="dim">…top 15 advance to Q2.</div>');
+    WEEKEND.qualiStage = 'q1';
+    WEEKEND.quali = { q1Advancing: advancing, q1All: times, log: lines.join('') };
+    renderWeekend();
+    return;
+  }
+  if(stage==='q2'){
+    const pool = WEEKEND.quali.q1Advancing.map(d=>({ ...d, time: 100 - (d.teamPace*0.35 + d.skill*0.25) + randf(-0.6,0.6) }))
+      .sort((a,b)=>a.time-b.time);
+    const advancing = pool.slice(0,10);
+    const out = pool.slice(10);
+    lines.push(`<div class="good">Q2 complete. 5 more eliminated.</div>`);
+    out.forEach(d=> lines.push(`<div class="bad">OUT: P${pool.indexOf(d)+11} ${d.abbr} ${d.time.toFixed(2)}</div>`));
+    advancing.slice(0,5).forEach((d,i)=> lines.push(`<div>P${i+1} ${d.abbr} ${d.time.toFixed(2)}</div>`));
+    lines.push('<div class="dim">…top 10 advance to Q3.</div>');
+    WEEKEND.qualiStage = 'q2';
+    WEEKEND.quali.q2Advancing = advancing;
+    WEEKEND.quali.q2All = pool;
+    WEEKEND.quali.log = (WEEKEND.quali.log || '') + lines.join('');
+    renderWeekend();
+    return;
+  }
+  if(stage==='q3'){
+    const pool = WEEKEND.quali.q2Advancing.map(d=>({ ...d, time: 100 - (d.teamPace*0.35 + d.skill*0.25) + randf(-0.4,0.4) }))
+      .sort((a,b)=>a.time-b.time);
+    lines.push(`<div class="good">Q3 complete. Grid set.</div>`);
+    pool.forEach((d,i)=> lines.push(`<div>${i+1}. ${d.abbr} (${d.teamId.toUpperCase()}) ${d.time.toFixed(2)}</div>`));
+    // Build final grid: Q3 order (P1-10), then Q2 eliminated P11-15, then Q1 eliminated P16-22
+    const eliminatedQ2 = WEEKEND.quali.q2All.slice(10);
+    const eliminatedQ1 = WEEKEND.quali.q1All.slice(15);
+    const grid = [
+      ...pool,
+      ...eliminatedQ2,
+      ...eliminatedQ1,
+    ];
+    WEEKEND.qualiStage = 'q3';
+    WEEKEND.quali.grid = grid;
+    WEEKEND.quali.log = (WEEKEND.quali.log || '') + lines.join('');
+    renderWeekend();
+    return;
+  }
+}
+
+// ---------- Strategy ----------
 function buildStrategyBlock(){
-  const locked = !WEEKEND.quali;
+  const locked = !WEEKEND.quali || !WEEKEND.quali.grid;
   const el = document.createElement('div');
   el.className = 'wk-step' + (locked?' locked':'');
   el.innerHTML = `
@@ -167,7 +195,7 @@ function buildStrategyBlock(){
 
 function driverStratHtml(d){
   const s = WEEKEND.strategy[d.abbr];
-  const gridPos = WEEKEND.quali ? (WEEKEND.quali.grid.findIndex(g=>g.abbr===d.abbr)+1) : '—';
+  const gridPos = WEEKEND.quali && WEEKEND.quali.grid ? (WEEKEND.quali.grid.findIndex(g=>g.abbr===d.abbr)+1) : '—';
   return `
     <div class="driver-strat" data-abbr="${d.abbr}">
       <div class="driver-strat-name">
@@ -197,22 +225,17 @@ function driverStratHtml(d){
     </div>
   `;
 }
-
 function bindStrategyControls(){
   document.querySelectorAll('[data-tyre]').forEach(b=>b.addEventListener('click', ()=>{
-    WEEKEND.strategy[b.dataset.abbr].tyre = b.dataset.tyre;
-    refreshStrategyBlock();
+    WEEKEND.strategy[b.dataset.abbr].tyre = b.dataset.tyre; refreshStrategyBlock();
   }));
   document.querySelectorAll('[data-plan]').forEach(b=>b.addEventListener('click', ()=>{
-    WEEKEND.strategy[b.dataset.abbr].plan = b.dataset.plan;
-    refreshStrategyBlock();
+    WEEKEND.strategy[b.dataset.abbr].plan = b.dataset.plan; refreshStrategyBlock();
   }));
   document.querySelectorAll('[data-orders]').forEach(b=>b.addEventListener('click', ()=>{
-    WEEKEND.strategy[b.dataset.abbr].orders = b.dataset.orders;
-    refreshStrategyBlock();
+    WEEKEND.strategy[b.dataset.abbr].orders = b.dataset.orders; refreshStrategyBlock();
   }));
 }
-
 function refreshStrategyBlock(){
   const wrap = document.getElementById('strategyDrivers');
   if(!wrap) return;
@@ -221,7 +244,7 @@ function refreshStrategyBlock(){
 }
 
 function buildGoRacingBlock(){
-  const ready = WEEKEND.quali;
+  const ready = WEEKEND.quali && WEEKEND.quali.grid;
   const el = document.createElement('div');
   el.className = 'wk-step';
   el.innerHTML = `
@@ -233,13 +256,10 @@ function buildGoRacingBlock(){
   `;
   setTimeout(()=>{
     document.getElementById('btnGoRace')?.addEventListener('click', ()=>{
-      const grid = WEEKEND.quali.grid;
-      startRace(grid, WEEKEND.strategy);
+      startRace(WEEKEND.quali.grid, WEEKEND.strategy);
     });
   }, 0);
   return el;
 }
 
-document.getElementById('wkBackBtn').addEventListener('click', ()=>{
-  enterHub();
-}); 
+document.getElementById('wkBackBtn').addEventListener('click', ()=>enterHub());
