@@ -1,7 +1,7 @@
 // ===================== STATE =====================
 const SAVE_PREFIX = 'pitwall_slot_';
 const SAVE_SLOTS = 3;
-const SAVE_VERSION = 9;
+const SAVE_VERSION = 10;
 const COST_CAP = 200;
 
 let STATE = null;
@@ -637,16 +637,10 @@ let simIntervalMs = 5000;
 const PACE_SCALE = 0.20;
 const BASE_LAP   = 90;
 
-function formatClock(ms){
-  const d = new Date(ms);
-  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-}
-
 function startRace(gridOverride, strategyOverride){
   const track = currentTrack();
   RACE = buildRaceState(track, gridOverride);
   RACE.drivers.forEach(d=>{
-    d.usedCompounds = new Set();
     const s = strategyOverride && strategyOverride[d.abbr];
     if(s){
       if(s.tyre) d.tyre = s.tyre;
@@ -656,7 +650,6 @@ function startRace(gridOverride, strategyOverride){
       d.tyre = aiStartTyre(track);
       d.pitPlan = Math.random()<0.5?'1-stop':'2-stop';
     }
-    d.usedCompounds.add(d.tyre);
     d.nextPitLap = d.pitPlan==='2-stop' ? Math.round(track.laps*randf(0.28,0.36)) : Math.round(track.laps*randf(0.42,0.58));
   });
 
@@ -692,7 +685,6 @@ function buildRaceState(track, gridOverride){
     totalTime: 0,
     gapToLeader: 0, interval: 0,
     tyre:'M', tyreAge:0, pitStops:0, pitHistory:[],
-    usedCompounds: new Set(),
     retired:false, retiredReason:null, retiredLap:null,
     damage:0, penaltyLapsLeft:0,
     distanceCovered: 0,
@@ -713,8 +705,6 @@ function buildRaceState(track, gridOverride){
     _armedTyre: null,
     _armedRepair: 0,
     _lastMessageLap: {},
-    dsq: false,
-    dsqReason: null,
   }));
   return {
     track, laps, wetness, lap:0,
@@ -993,10 +983,7 @@ function simulateLap(silent){
         pushMsg('rc', 'RC:', `${d.abbr} PUNCTURE!`);
         if(d.teamId===STATE.myTeamId) flashBanner('Puncture!','red');
         d.totalTime += 28 + randf(-3,5);
-        if(d._pitTimer===0){
-          const newTyre = pickAllowedCompounds(d, wet);
-          if(newTyre) executePit(d, newTyre, 0);
-        }
+        if(d._pitTimer===0) executePit(d, pickAllowedCompounds(d, wet), 0);
         if(Math.random() < 0.08) retireDriver(d, 'crash');
       }
     }
@@ -1233,7 +1220,6 @@ function openRedFlagResumeModal(){
   openModal(`
     <h2 style="color:var(--red)">🔴 Red Flag</h2>
     <p>Race stopped. Choose tyres for the restart. Race resumes behind the Safety Car.</p>
-    <p style="font-size:11.5px;color:var(--dimmer)">Compounds already used this race cannot be refitted (wets exempt).</p>
     ${myDrivers.map(d=>{
       const dd = RACE.drivers.find(x=>x.abbr===d.abbr);
       return `
@@ -1245,13 +1231,10 @@ function openRedFlagResumeModal(){
         <div class="tyre-select">
           ${['S','M','H','I','W'].map(c=>{
             const isCurrent = dd.tyre === c;
-            const isUsed = dd.usedCompounds && dd.usedCompounds.has(c) && !COMPOUNDS[c].wet;
-            const disabled = isUsed && !isCurrent;
             return `
-            <button class="tyre-btn rf-tyre ${isCurrent?'active':''}" data-abbr="${d.abbr}" data-tyre="${c}" ${disabled?'disabled':''}>
+            <button class="tyre-btn rf-tyre ${isCurrent?'active':''}" data-abbr="${d.abbr}" data-tyre="${c}">
               <span class="tyre-dot ${c}"></span>${COMPOUNDS[c].name}
               ${isCurrent?'<span class="used-tag">current</span>':''}
-              ${disabled?'<span class="used-tag">used</span>':''}
             </button>`;
           }).join('')}
         </div>
@@ -1265,7 +1248,6 @@ function openRedFlagResumeModal(){
     sel[d.abbr] = dd.tyre;
   });
   document.querySelectorAll('.rf-tyre').forEach(b=>b.addEventListener('click', ()=>{
-    if(b.disabled) return;
     const abbr = b.dataset.abbr;
     const tyre = b.dataset.tyre;
     sel[abbr] = tyre;
@@ -1276,15 +1258,10 @@ function openRedFlagResumeModal(){
     RACE.drivers.forEach(d=>{
       const chosen = sel[d.abbr];
       if(chosen && chosen !== d.tyre){
-        const isWet = COMPOUNDS[chosen].wet;
-        const alreadyUsed = d.usedCompounds.has(chosen) && !isWet;
-        if(!alreadyUsed){
-          d.tyre = chosen;
-          d.tyreAge = 0;
-          d.usedCompounds.add(chosen);
-          d.pitStops++;
-          d.pitHistory.push({lap:RACE.lap, tyre:chosen, reason:'redflag'});
-        }
+        d.tyre = chosen;
+        d.tyreAge = 0;
+        d.pitStops++;
+        d.pitHistory.push({lap:RACE.lap, tyre:chosen, reason:'redflag'});
       }
       d._puncture = false;
       d.damage = Math.max(0, d.damage - 2);
@@ -1302,18 +1279,14 @@ function openRedFlagResumeModal(){
 }
 
 function pickAllowedCompounds(d, wet){
-  const used = d.usedCompounds || new Set();
-  const options = [];
+  const options = ['S','M','H'];
   if(wet > 0.3){
     options.push('I');
     if(wet > 0.6) options.push('W');
+  } else {
+    options.push('I');
   }
-  ['S','M','H'].forEach(c=>{
-    if(!used.has(c)) options.push(c);
-  });
-  options.push('I','W');
-  const unique = [...new Set(options)];
-  return unique.length ? pick(unique) : 'W';
+  return pick(options);
 }
 
 function maybeAIPitStop(d, track, wet){
@@ -1328,21 +1301,10 @@ function maybeAIPitStop(d, track, wet){
   const duePlanned = d.nextPitLap && RACE.lap >= d.nextPitLap && d.pitStops < (d.pitPlan==='2-stop'?2:1);
   if((track.laps-RACE.lap) < 3) return;
   if(wantsWet || wantsSlickBack || tyreWorn || duePlanned){
-    const used = d.usedCompounds || new Set();
-    let newTyre = null;
-    if(wantsWet){
-      newTyre = wet>0.6 ? 'W' : 'I';
-    } else if(wantsSlickBack){
-      const avail = ['M','H','S'].filter(c=>!used.has(c));
-      newTyre = avail.length ? pick(avail) : null;
-    } else {
-      const avail = ['H','M','S'].filter(c=>!used.has(c));
-      newTyre = avail.length ? pick(avail) : null;
-    }
-    if(!newTyre){
-      if(wet > 0.3) newTyre = 'I';
-      else return;
-    }
+    let newTyre;
+    if(wantsWet) newTyre = wet>0.6 ? 'W' : 'I';
+    else if(wantsSlickBack) newTyre = pick(['M','H']);
+    else newTyre = pick(['H','M']);
     executePit(d, newTyre, d.damage >= 3 ? Math.min(d.damage, 5) : 0);
     if(d.pitPlan==='2-stop' && d.pitStops===1) d.nextPitLap = RACE.lap + Math.round(track.laps*randf(0.25,0.4));
     else d.nextPitLap = 99999;
@@ -1351,19 +1313,12 @@ function maybeAIPitStop(d, track, wet){
 
 function executePit(d, newTyre, repairAmount){
   if(d._pitTimer > 0) return;
-  const used = d.usedCompounds || (d.usedCompounds = new Set());
-  const isWet = COMPOUNDS[newTyre] && COMPOUNDS[newTyre].wet;
-  if(used.has(newTyre) && !isWet){
-    pushMsg('strat', 'STRAT:', `${d.abbr}: ${COMPOUNDS[newTyre].name} already used — cannot refit.`);
-    newTyre = d.tyre;
-  }
   const pitLoss = 18 + randf(0, 6);
   const repairTime = (repairAmount || 0) * 6;
   d._pitTimer = 2;
   d._pendingTyre = newTyre || d.tyre;
   d._pendingRepair = repairAmount || 0;
   d.pitStops++;
-  d.usedCompounds.add(d._pendingTyre);
   d.pitHistory.push({lap:RACE.lap, tyre:d._pendingTyre, repair: repairAmount||0});
   d.totalTime += pitLoss + repairTime;
   let msg = `${d.abbr} pits — ${COMPOUNDS[d._pendingTyre].name}`;
@@ -1382,12 +1337,6 @@ function executePit(d, newTyre, repairAmount){
 
 function armPit(driver, tyre, repair){
   if(!driver || driver.retired) return;
-  const used = driver.usedCompounds || new Set();
-  const isWet = COMPOUNDS[tyre] && COMPOUNDS[tyre].wet;
-  if(used.has(tyre) && !isWet && tyre !== driver.tyre){
-    pushMsg('strat', 'STRAT:', `${driver.abbr}: ${COMPOUNDS[tyre].name} already used — pick a different compound.`);
-    return;
-  }
   driver._armedPit = true;
   driver._armedTyre = tyre;
   driver._armedRepair = repair || 0;
@@ -1423,17 +1372,6 @@ function runEngineerRadio(){
     const wet = RACE.wetness[Math.min(RACE.lap, RACE.wetness.length-1)] || 0;
     if(wet > 0.2 && !COMPOUNDS[d.tyre].wet) engineerSay(d, `${d.abbr}: it's raining — inters may be needed.`, 'rain1_'+d.abbr);
     if(wet > 0.6 && d.tyre === 'I') engineerSay(d, `${d.abbr}: heavy rain — full wets would be faster.`, 'rain2_'+d.abbr);
-    const used = d.usedCompounds || new Set();
-    const dryLeft = ['S','M','H'].filter(c=>!used.has(c));
-    if(!COMPOUNDS[d.tyre].wet){
-      if(dryLeft.length === 1) engineerSay(d, `${d.abbr}: only ${COMPOUNDS[dryLeft[0]].name} left in dry compounds.`, 'tyrecap1_'+d.abbr);
-      if(dryLeft.length === 0) engineerSay(d, `${d.abbr}: no dry compounds left — you must stay out.`, 'tyrecap0_'+d.abbr);
-    }
-    const usedDry = ['S','M','H'].filter(c=>used.has(c));
-    const remaining = RACE.laps - RACE.lap;
-    if(usedDry.length < 2 && remaining <= 12 && (RACE.wetness[Math.min(RACE.lap, RACE.wetness.length-1)]||0) < 0.1){
-      engineerSay(d, `${d.abbr}: you must use two compounds — pit for a different tyre or face DSQ.`, 'twocomp_'+d.abbr);
-    }
   });
 }
 
@@ -1458,8 +1396,7 @@ function sendRadio(key){
 // ---- Messages ----
 function pushMsg(kind, tag, text){
   if(!RACE) return;
-  const lap = RACE.lap;
-  RACE.messages.push({ kind, tag, text, lap });
+  RACE.messages.push({ kind, tag, text, lap: RACE.lap });
   renderRibbon();
 }
 function renderRibbon(){
@@ -1527,7 +1464,6 @@ function openPitMenu(driver){
   if(driver._armedPit){ cancelPit(driver); renderTower(); return; }
   const life = Math.round(tyreLifePercent(driver));
   const health = Math.round(carHealthPercent(driver));
-  const used = driver.usedCompounds || new Set();
   const compounds = ['S','M','H','I','W'];
   openModal(`
     <h2>Pit call — ${driver.name}</h2>
@@ -1536,13 +1472,10 @@ function openPitMenu(driver){
     <div class="tyre-select" id="pitTyreRow">
       ${compounds.map(c=>{
         const isCurrent = c === driver.tyre;
-        const isUsed = used.has(c) && !COMPOUNDS[c].wet;
-        const disabled = isUsed && !isCurrent;
         return `
-        <button class="tyre-btn pit-tyre ${isCurrent?'active':''}" data-tyre="${c}" ${disabled?'disabled':''}>
+        <button class="tyre-btn pit-tyre ${isCurrent?'active':''}" data-tyre="${c}">
           <span class="tyre-dot ${c}"></span>${COMPOUNDS[c].name}
           ${isCurrent?'<span class="used-tag">current</span>':''}
-          ${disabled?'<span class="used-tag">used</span>':''}
         </button>`;
       }).join('')}
     </div>
@@ -1560,7 +1493,6 @@ function openPitMenu(driver){
   let chosenTyre = driver.tyre;
   let chosenRepair = 0;
   document.querySelectorAll('.pit-tyre').forEach(b=>b.addEventListener('click', ()=>{
-    if(b.disabled) return;
     chosenTyre = b.dataset.tyre;
     document.querySelectorAll('.pit-tyre').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
@@ -1573,20 +1505,13 @@ function openPitMenu(driver){
   }));
   document.getElementById('btnPitCancel').addEventListener('click', closeModal);
   document.getElementById('btnPitConfirm').addEventListener('click', ()=>{
-    const used = driver.usedCompounds || new Set();
-    const isWet = COMPOUNDS[chosenTyre] && COMPOUNDS[chosenTyre].wet;
-    if(used.has(chosenTyre) && !isWet && chosenTyre !== driver.tyre){
-      pushMsg('strat', 'STRAT:', `${driver.abbr}: ${COMPOUNDS[chosenTyre].name} already used — pick another.`);
-      closeModal();
-      return;
-    }
     armPit(driver, chosenTyre, chosenRepair);
     closeModal();
     renderTower();
   });
 }
 
-// ---- SVG: tyre circle with crescent arc ----
+// ---- SVG helpers ----
 function compoundColor(c){
   return { S:'#ef4444', M:'#fbbf24', H:'#e5e7eb', I:'#22c55e', W:'#3b82f6' }[c] || '#e5e7eb';
 }
@@ -1602,15 +1527,13 @@ function tyreSvg(compound, lifePct){
   else if(lifePct > 25) arcColor = '#E8A93A';
   else arcColor = '#C4453D';
 
-  const letterColor = compoundColor(compound);
-
   return `<span class="tyre-svg-wrap">
     <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
       <circle cx="${cx}" cy="${cy}" r="${r}" fill="#0a0d14" stroke="#2A2F38" stroke-width="1.2"/>
       <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${arcColor}" stroke-width="2.4"
         stroke-dasharray="${arc} ${circ}" transform="rotate(-90 ${cx} ${cy})" stroke-linecap="round"/>
       <text x="${cx}" y="${cy + 4}" text-anchor="middle" font-family="JetBrains Mono, monospace"
-        font-size="10" font-weight="700" fill="${letterColor}">${compound}</text>
+        font-size="10" font-weight="700" fill="${compoundColor(compound)}">${compound}</text>
     </svg>
   </span>`;
 }
@@ -1775,7 +1698,15 @@ function openDriverDetail(d){
   }));
 }
 
-// ---- Track view ----
+// ---- Track view: circular, anti-clockwise, pure motion ----
+function interpolatedTotalTime(d){
+  if(racePaused) return d.totalTime;
+  const now = performance.now();
+  const elapsed = now - lastSimTime;
+  const pct = Math.min(1, Math.max(0, elapsed / simIntervalMs));
+  return d.totalTime + BASE_LAP * pct;
+}
+
 function drawTrackView(){
   const canvas = document.getElementById('trackCanvas');
   if(!canvas || !RACE) return;
@@ -1786,175 +1717,92 @@ function drawTrackView(){
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
 
-  const pad = 20;
-  const usableH = h - pad * 2;
-  const rowH = usableH / 8.2;
-  const barW = w - pad * 2;
+  const cx = w / 2;
+  const cy = h / 2;
+  const radius = Math.min(w, h) * 0.40;
 
-  const sectorsY = {
-    3: { top: pad,              bot: pad + rowH * 0.62 },
-    2: { top: pad + rowH * 2.4, bot: pad + rowH * 3.02 },
-    1: { top: pad + rowH * 4.8, bot: pad + rowH * 5.42 },
-  };
-  const pitY = pad + rowH * 6.9;
+  // 1. Outer thick track surface
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.strokeStyle = '#1a1f28';
+  ctx.lineWidth = 12;
+  ctx.stroke();
 
-  const sectorColors = { green:'#2f7a4a', yellow:'#c9922a', red:'#a13b34' };
+  // 2. Inner thin line
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.strokeStyle = '#2A2F38';
+  ctx.lineWidth = 2;
+  ctx.stroke();
 
-  const drawSectorBand = (num)=>{
-    const { top: topY, bot: botY } = sectorsY[num];
-    const flag = RACE.sectors[num-1] || 'green';
-    const color = sectorColors[flag] || sectorColors.green;
-
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 3;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(pad, topY);
-    ctx.lineTo(pad + barW, topY);
-    ctx.stroke();
-
-    drawArrow(ctx, pad + barW/2, topY - 10, 'right', color);
-
-    ctx.beginPath();
-    ctx.moveTo(pad, botY);
-    ctx.lineTo(pad + barW, botY);
-    ctx.stroke();
-    drawArrow(ctx, pad + barW/2, botY + 14, 'left', color);
-
-    ctx.fillStyle = '#8B92A0';
-    ctx.font = 'bold 11px JetBrains Mono, monospace';
-    ctx.fillText(`SECTOR ${num}`, pad, topY - 12);
-
-    ctx.fillStyle = color;
-    ctx.font = 'bold 10px JetBrains Mono, monospace';
-    const label = flag.toUpperCase();
-    const labelW = ctx.measureText(label).width;
-    ctx.fillText(label, pad + barW - labelW, topY - 12);
-  };
-
-  drawSectorBand(3);
-  drawSectorBand(2);
-  drawSectorBand(1);
-
-  const sfX = pad + barW;
-  const sfY = sectorsY[1].bot;
-  ctx.fillStyle = '#EDEAE2';
-  ctx.beginPath(); ctx.arc(sfX, sfY, 5, 0, Math.PI*2); ctx.fill();
-  ctx.font = 'bold 10px JetBrains Mono, monospace';
-  ctx.fillStyle = '#EDEAE2';
-  ctx.fillText('S/F', sfX - 26, sfY + 4);
-
+  // 3. Dashed centre line
+  ctx.save();
+  ctx.beginPath();
+  ctx.setLineDash([6, 8]);
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
   ctx.strokeStyle = '#2A2F38';
   ctx.lineWidth = 1;
-  ctx.setLineDash([4,4]);
-  ctx.beginPath();
-  ctx.moveTo(pad, pitY);
-  ctx.lineTo(pad + barW, pitY);
+  ctx.globalAlpha = 0.6;
   ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.fillStyle = '#565D6A';
-  ctx.font = 'bold 10px JetBrains Mono, monospace';
-  ctx.fillText('PIT BOX', pad, pitY - 6);
+  ctx.restore();
 
-  const active = RACE.drivers.filter(d=>!d.retired);
-  if(active.length === 0) return;
+  // 4. S/F marker at top
+  const sfX = cx + radius * Math.sin(0);
+  const sfY = cy - radius * Math.cos(0);
+  ctx.beginPath();
+  ctx.arc(sfX, sfY, 5, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  ctx.font = 'bold 13px monospace';
+  ctx.fillStyle = '#EDEAE2';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  ctx.fillText('S/F', sfX + 10, sfY);
 
-  active.forEach(d=>{
-    if(d._pitTimer > 0){
-      const pitting = RACE.drivers.filter(x=>x._pitTimer>0);
-      const idx = pitting.indexOf(d);
-      const px = pad + 30 + idx * 90;
-      const py = pitY + 22;
-      ctx.fillStyle = teamById(d.teamId).color;
-      ctx.beginPath(); ctx.arc(px, py, 7, 0, Math.PI*2); ctx.fill();
-      ctx.strokeStyle = '#60a5fa'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(px, py, 10, 0, Math.PI*2); ctx.stroke();
-      ctx.fillStyle = '#EDEAE2';
-      ctx.font = 'bold 11px JetBrains Mono, monospace';
-      ctx.fillText(`${d.abbr} · ${d.tyre}`, px + 14, py + 4);
-      return;
-    }
+  // 5. Draw drivers (mine last, on top)
+  const drawOrder = RACE.drivers.slice().sort((a,b)=>{
+    const aMine = a.teamId === STATE.myTeamId ? 1 : 0;
+    const bMine = b.teamId === STATE.myTeamId ? 1 : 0;
+    return aMine - bMine;
+  });
 
-    // Each driver's own on-track phase — leader included
-    const frac = ((d.totalTime / LAP_TIME_APPROX) % 1 + 1) % 1;
+  ctx.font = 'bold 14px monospace';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
 
-    let sectorNum, intra;
-    if(frac < 1/3){
-      sectorNum = 1;
-      intra = frac / (1/3);
-    } else if(frac < 2/3){
-      sectorNum = 2;
-      intra = (frac - 1/3) / (1/3);
-    } else {
-      sectorNum = 3;
-      intra = (frac - 2/3) / (1/3);
-    }
+  for (const d of drawOrder) {
+    if (d.retired) continue;
 
-    const band = sectorsY[sectorNum];
-    let x, y;
-    if(intra < 0.5){
-      x = pad + (intra / 0.5) * barW;
-      y = band.top;
-    } else {
-      x = pad + barW - ((intra - 0.5) / 0.5) * barW;
-      y = band.bot;
-    }
+    const frac = ((interpolatedTotalTime(d) / LAP_TIME_APPROX) % 1 + 1) % 1;
+    const angle = -frac * Math.PI * 2; // anti-clockwise from top
 
+    const x = cx + radius * Math.sin(angle);
+    const y = cy - radius * Math.cos(angle);
+
+    const color = teamById(d.teamId).color;
     const isMine = d.teamId === STATE.myTeamId;
 
     ctx.beginPath();
-    ctx.arc(x, y, isMine ? 9 : 7, 0, Math.PI*2);
-    ctx.fillStyle = teamById(d.teamId).color;
+    ctx.arc(x, y, isMine ? 11 : 9, 0, Math.PI * 2);
+    ctx.fillStyle = color;
     ctx.fill();
-    if(isMine){ ctx.strokeStyle='#fff'; ctx.lineWidth = 1.6; ctx.stroke(); }
 
     ctx.beginPath();
-    ctx.arc(x, y, isMine ? 13 : 11, 0, Math.PI*2);
-    ctx.strokeStyle = compoundColor(d.tyre);
-    ctx.lineWidth = 2;
+    ctx.arc(x, y, isMine ? 11 : 9, 0, Math.PI * 2);
+    ctx.strokeStyle = isMine ? '#ffffff' : 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = isMine ? 2 : 1.2;
     ctx.stroke();
 
     ctx.fillStyle = '#EDEAE2';
-    ctx.font = 'bold 13px JetBrains Mono, monospace';
-    ctx.fillText(d.abbr, x + (isMine ? 16 : 14), y + 4);
-
-    if(d._armedPit){
-      ctx.fillStyle = '#5FB878';
-      ctx.beginPath();
-      ctx.moveTo(x, y - 22);
-      ctx.lineTo(x + 6, y - 16);
-      ctx.lineTo(x - 6, y - 16);
-      ctx.closePath();
-      ctx.fill();
-    }
-
-    if(d.damage >= 5){
-      ctx.fillStyle = '#C4453D';
-      ctx.beginPath();
-      ctx.arc(x - 14, y - 12, 4, 0, Math.PI*2);
-      ctx.fill();
-    }
-  });
-
-  ctx.fillStyle = '#565D6A';
-  ctx.font = '11px JetBrains Mono, monospace';
-  ctx.fillText(`${RACE.track.name} — Lap ${RACE.lap}/${RACE.laps}`, pad, h - 8);
-}
-
-function drawArrow(ctx, x, y, dir, color){
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  if(dir === 'right'){
-    ctx.moveTo(x + 7, y);
-    ctx.lineTo(x - 5, y - 6);
-    ctx.lineTo(x - 5, y + 6);
-  } else {
-    ctx.moveTo(x - 7, y);
-    ctx.lineTo(x + 5, y - 6);
-    ctx.lineTo(x + 5, y + 6);
+    ctx.fillText(d.abbr, x + (isMine ? 17 : 15), y);
   }
-  ctx.closePath();
-  ctx.fill();
+
+  // 6. Header text
+  ctx.font = 'bold 15px monospace';
+  ctx.fillStyle = '#EDEAE2';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText(`${RACE.track.name} — Lap ${RACE.lap}/${RACE.laps}`, 12, 12);
 }
 
 // ---- Finish ----
@@ -1970,32 +1818,21 @@ function showRaceResults(){
   stopSimLoop();
   stopRenderLoop();
 
-  RACE.drivers.forEach(d=>{
-    if(d.retired) return;
-    const usedDry = ['S','M','H'].filter(c=>d.usedCompounds.has(c));
-    if(usedDry.length < 2){
-      d.dsq = true;
-      d.dsqReason = 'Only 1 dry compound used';
-      pushMsg('rc', 'RC:', `${d.abbr} DISQUALIFIED — must use 2 different dry compounds.`);
-    }
-  });
-
-  const classified = RACE.drivers.filter(d=>!d.retired && !d.dsq);
+  const classified = RACE.drivers.filter(d=>!d.retired);
   const dnfs = RACE.drivers.filter(d=>d.retired);
-  const dsqs = RACE.drivers.filter(d=>d.dsq);
-  const results = [...classified, ...dnfs, ...dsqs];
+  const results = [...classified, ...dnfs];
 
   let myPrize = 0;
   const myResults = [];
   results.forEach((d,i)=>{
-    const pts = i<POINTS_TABLE.length && !d.retired && !d.dsq ? POINTS_TABLE[i] : 0;
+    const pts = i<POINTS_TABLE.length && !d.retired ? POINTS_TABLE[i] : 0;
     STATE.driversPoints[d.abbr] = (STATE.driversPoints[d.abbr]||0) + pts;
     STATE.constructorsPoints[d.teamId] = (STATE.constructorsPoints[d.teamId]||0) + pts;
     if(!STATE.form[d.abbr]) STATE.form[d.abbr] = { pointsThisSeason:0, raceWins:0, qualiWins:0 };
     STATE.form[d.abbr].pointsThisSeason = (STATE.form[d.abbr].pointsThisSeason||0) + pts;
     if(d.teamId===STATE.myTeamId){
       myPrize += PRIZE_BY_POS[i] || PRIZE_BY_POS[PRIZE_BY_POS.length-1];
-      myResults.push({abbr:d.abbr, name:d.name, pos:i+1, retired:d.retired, dsq:d.dsq});
+      myResults.push({abbr:d.abbr, name:d.name, pos:i+1, retired:d.retired});
     }
   });
 
@@ -2003,7 +1840,7 @@ function showRaceResults(){
   const [d1, d2] = t.drivers;
   const p1 = RACE.drivers.find(x=>x.abbr===d1.abbr);
   const p2 = RACE.drivers.find(x=>x.abbr===d2.abbr);
-  if(p1 && p2 && !p1.retired && !p2.retired && !p1.dsq && !p2.dsq){
+  if(p1 && p2 && !p1.retired && !p2.retired){
     const w = p1.position < p2.position ? d1 : d2;
     if(!STATE.form[w.abbr]) STATE.form[w.abbr] = { pointsThisSeason:0, raceWins:0, qualiWins:0 };
     STATE.form[w.abbr].raceWins = (STATE.form[w.abbr].raceWins||0)+1;
@@ -2011,7 +1848,7 @@ function showRaceResults(){
 
   if(RACE.fastestLapHolder){
     const fl = RACE.drivers.find(d=>d.abbr===RACE.fastestLapHolder);
-    if(fl && !fl.retired && !fl.dsq && fl.position <= 10){
+    if(fl && !fl.retired && fl.position <= 10){
       STATE.driversPoints[fl.abbr] = (STATE.driversPoints[fl.abbr]||0) + 1;
       STATE.constructorsPoints[fl.teamId] = (STATE.constructorsPoints[fl.teamId]||0) + 1;
     }
@@ -2021,10 +1858,10 @@ function showRaceResults(){
     season: STATE.season,
     round: STATE.round+1,
     track: RACE.track.id,
-    results: results.map((d,i)=>({abbr:d.abbr, pos:i+1, retired:d.retired, dsq:d.dsq})),
+    results: results.map((d,i)=>({abbr:d.abbr, pos:i+1, retired:d.retired})),
   });
 
-  const bestPos = myResults.filter(r=>!r.retired && !r.dsq).sort((a,b)=>a.pos-b.pos)[0]?.pos || 20;
+  const bestPos = myResults.filter(r=>!r.retired).sort((a,b)=>a.pos-b.pos)[0]?.pos || 20;
   const expected = { title:3, contender:6, midfield:9, backmarker:12 }[myTeam().tier];
   const delta = clamp((expected - bestPos) * 1.2, -12, 14);
   STATE.boardConf = clamp(STATE.boardConf + delta, 0, 100);
@@ -2042,10 +1879,8 @@ function showRaceResults(){
 function renderResultsModal(results, myResults, myPrize, delta){
   const rows = results.map((d,i)=>{
     const t = teamById(d.teamId);
-    const statusText = d.retired ? (d.retiredReason==='crash'?'DNF (crash)':'DNF (mec)')
-                      : d.dsq ? 'DSQ'
-                      : `P${i+1}`;
-    const pts = i<POINTS_TABLE.length && !d.retired && !d.dsq ? POINTS_TABLE[i] : 0;
+    const statusText = d.retired ? (d.retiredReason==='crash'?'DNF (crash)':'DNF (mec)') : `P${i+1}`;
+    const pts = i<POINTS_TABLE.length && !d.retired ? POINTS_TABLE[i] : 0;
     const crown = (RACE.fastestLapHolder===d.abbr) ? ' ♛' : '';
     return `<div class="side-row" style="border-bottom:1px solid var(--line);padding:7px 0;">
       <span><span class="team-pill" style="background:${t.color}"></span>${d.abbr}${crown} ${t.id===STATE.myTeamId?'←':''}</span>
@@ -2054,8 +1889,8 @@ function renderResultsModal(results, myResults, myPrize, delta){
   }).join('');
   const deltaText = delta>0 ? `+${delta.toFixed(1)}` : delta.toFixed(1);
   const deltaColor = delta>0?'var(--green)':delta<0?'var(--red)':'var(--dim)';
-  const biggestMover = RACE.drivers.filter(d=>!d.retired && !d.dsq).slice().sort((a,b)=>(a.startPosition-a.position)-(b.startPosition-b.position)).pop();
-  const yourBest = myResults.filter(r=>!r.retired && !r.dsq).sort((a,b)=>a.pos-b.pos)[0];
+  const biggestMover = RACE.drivers.filter(d=>!d.retired).slice().sort((a,b)=>(a.startPosition-a.position)-(b.startPosition-b.position)).pop();
+  const yourBest = myResults.filter(r=>!r.retired).sort((a,b)=>a.pos-b.pos)[0];
 
   openModal(`
     <h2>Race Result — ${RACE.track.name}</h2>
