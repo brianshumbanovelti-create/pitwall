@@ -1,7 +1,8 @@
 // ===================== STATE =====================
 const SAVE_PREFIX = 'pitwall_slot_';
 const SAVE_SLOTS = 3;
-const SAVE_VERSION = 3;
+const SAVE_VERSION = 4;
+const COST_CAP = 200; // per season
 
 let STATE = null;
 let activeSlot = 0;
@@ -13,6 +14,7 @@ function blankState(teamId){
     season: 1,
     round: 0,
     budget: 0,
+    capUsed: 0,
     engineers: {},
     candidates: [],
     constructorsPoints: Object.fromEntries(TEAMS.map(t=>[t.id,0])),
@@ -20,16 +22,15 @@ function blankState(teamId){
     driverTeam: Object.fromEntries(TEAMS.flatMap(t=>t.drivers.map(d=>[d.abbr,t.id]))),
     carPaceBoost: 0,
     carReliabilityBoost: 0,
-    strategyBoost: 0,
     boardConf: 70,
     raceLog: [],
     seasonArchive: [],
     upgrades: { aero:0, pu:0, rel:0, strat:0 },
+    pendingUpgrades: [],
     settings: { sound: true },
-    achievements: {},
+    marketOffers: [],
   };
 }
-
 function newGameState(teamId){
   const team = TEAMS.find(t=>t.id===teamId);
   const s = blankState(teamId);
@@ -42,18 +43,10 @@ function newGameState(teamId){
   };
   return s;
 }
-
 function makeStarterEngineer(roleKey, tier){
   const role = ENGINEER_ROLES.find(r=>r.key===roleKey);
   const base = { title:78, contender:68, midfield:58, backmarker:48 }[tier];
-  return {
-    id: roleKey+'_start',
-    name: randName(),
-    role: roleKey,
-    roleLabel: role.label,
-    affects: role.affects,
-    skill: clamp(base + rand(-4,4), 20, 99),
-  };
+  return { id: roleKey+'_start', name: randName(), role: roleKey, roleLabel: role.label, affects: role.affects, skill: clamp(base + rand(-4,4), 20, 99) };
 }
 function randName(){ return `${pick(ENGINEER_FIRST)} ${pick(ENGINEER_LAST)}`; }
 function rand(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
@@ -62,19 +55,18 @@ function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
 function clamp(v,min,max){ return Math.max(min,Math.min(max,v)); }
 
 // ===================== PERSISTENCE =====================
-function saveToSlot(slot){
-  try{ localStorage.setItem(SAVE_PREFIX+slot, JSON.stringify(STATE)); }catch(e){}
-}
+function saveToSlot(slot){ try{ localStorage.setItem(SAVE_PREFIX+slot, JSON.stringify(STATE)); }catch(e){} }
 function loadFromSlot(slot){
   try{
     const raw = localStorage.getItem(SAVE_PREFIX+slot);
     if(!raw) return null;
     const s = JSON.parse(raw);
-    // Migrate older saves minimally
     if(!s.boardConf) s.boardConf = 70;
     if(!s.upgrades) s.upgrades = {aero:0,pu:0,rel:0,strat:0};
     if(!s.settings) s.settings = { sound:true };
-    if(!s.achievements) s.achievements = {};
+    if(!s.pendingUpgrades) s.pendingUpgrades = [];
+    if(!s.marketOffers) s.marketOffers = [];
+    if(s.capUsed===undefined) s.capUsed = 0;
     return s;
   }catch(e){ return null; }
 }
@@ -93,10 +85,7 @@ function openModal(html){
 function closeModal(){ document.getElementById('modalOverlay').classList.remove('active'); }
 
 // ===================== INTRO =====================
-document.getElementById('btnGoTeamSelect').addEventListener('click', ()=>{
-  renderTeamSelect();
-  showScreen('screen-teamselect');
-});
+document.getElementById('btnGoTeamSelect').addEventListener('click', ()=>{ renderTeamSelect(); showScreen('screen-teamselect'); });
 document.getElementById('btnLoadGame').addEventListener('click', openSaveSlots);
 document.getElementById('btnSaveSlots').addEventListener('click', openSaveSlots);
 document.getElementById('btnSettings').addEventListener('click', openSettings);
@@ -106,14 +95,9 @@ function openSaveSlots(){
     <h2>Save slots</h2>
     ${[0,1,2].map(i=>{
       const s = loadFromSlot(i);
-      const meta = s
-        ? `Season ${s.season} · Round ${s.round+1}/24 · ${TEAMS.find(t=>t.id===s.myTeamId).abbr} · $${s.budget}M`
-        : 'Empty slot';
+      const meta = s ? `Season ${s.season} · Round ${s.round+1}/24 · ${TEAMS.find(t=>t.id===s.myTeamId).abbr} · $${s.budget}M` : 'Empty slot';
       return `<div class="save-slot">
-        <div>
-          <div style="font-weight:700;margin-bottom:3px">Slot ${i+1}</div>
-          <div class="meta">${meta}</div>
-        </div>
+        <div><div style="font-weight:700;margin-bottom:3px">Slot ${i+1}</div><div class="meta">${meta}</div></div>
         <div style="display:flex;gap:8px">
           ${s ? `<button class="btn btn-primary btn-sm" data-load="${i}">Load</button>
                  <button class="btn btn-danger btn-sm" data-del="${i}">Delete</button>`
@@ -132,28 +116,23 @@ function openSaveSlots(){
     enterHub();
   }));
   document.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click', ()=>{
-    clearSlot(parseInt(b.dataset.del));
-    openSaveSlots();
+    clearSlot(parseInt(b.dataset.del)); openSaveSlots();
   }));
   document.getElementById('btnCloseSave').addEventListener('click', closeModal);
 }
 
 function openSettings(){
   const s = STATE ? STATE.settings : { sound:true };
-  const html = `
+  openModal(`
     <h2>Settings</h2>
     <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)">
       <span>Sound effects</span>
       <button class="btn btn-ghost btn-sm" id="btnToggleSound">${s.sound?'On':'Off'}</button>
     </div>
-    <p style="margin-top:14px;font-size:12px">Sound is procedural (WebAudio beeps) — no external files.</p>
     <div class="modal-actions"><button class="btn btn-ghost btn-sm" id="btnCloseSettings">Close</button></div>
-  `;
-  openModal(html);
+  `);
   document.getElementById('btnToggleSound').addEventListener('click', ()=>{
-    const cur = STATE ? STATE.settings : s;
-    cur.sound = !cur.sound;
-    if(STATE){ saveToSlot(activeSlot); }
+    if(STATE){ STATE.settings.sound = !STATE.settings.sound; saveToSlot(activeSlot); }
     openSettings();
   });
   document.getElementById('btnCloseSettings').addEventListener('click', closeModal);
@@ -167,7 +146,6 @@ function renderTeamSelect(){
   TEAMS.forEach(team=>{
     const card = document.createElement('div');
     card.className = 'team-card';
-    const obj = TIER_OBJECTIVES[team.tier];
     card.innerHTML = `
       <div class="team-card-top">
         <span class="team-abbr mono" style="color:${team.color}">${team.abbr}</span>
@@ -180,7 +158,7 @@ function renderTeamSelect(){
         <span class="team-stat-mini">RELI <b>${team.reliability}</b></span>
         <span class="team-stat-mini">$ <b>${team.budget}M</b></span>
       </div>
-      <div class="team-drivers" style="margin-top:2px;">Board: ${obj.label}</div>
+      <div class="team-drivers" style="margin-top:2px;">Board: ${TIER_OBJECTIVES[team.tier].label}</div>
     `;
     card.addEventListener('click', ()=>{
       document.querySelectorAll('.team-card').forEach(c=>c.classList.remove('selected'));
@@ -196,7 +174,6 @@ document.getElementById('btnConfirmTeam').addEventListener('click', ()=>{
   if(!selectedTeamId) return;
   STATE = newGameState(selectedTeamId);
   activeSlot = 0;
-  // find first empty slot
   for(let i=0;i<SAVE_SLOTS;i++){ if(!loadFromSlot(i)){ activeSlot = i; break; } }
   saveToSlot(activeSlot);
   enterHub();
@@ -207,10 +184,7 @@ function myTeam(){ return TEAMS.find(t=>t.id===STATE.myTeamId); }
 function teamById(id){ return TEAMS.find(t=>t.id===id); }
 function currentTrack(){ return TRACKS[STATE.round] || null; }
 
-function enterHub(){
-  renderHub();
-  showScreen('screen-hub');
-}
+function enterHub(){ renderHub(); showScreen('screen-hub'); }
 
 function renderHub(){
   const team = myTeam();
@@ -231,6 +205,7 @@ function renderHub(){
   document.getElementById('sideDrivPos').textContent = mine[0] ? `P${driv.indexOf(mine[0])+1}` : '—';
   document.getElementById('sidePace').textContent = team.pace + STATE.carPaceBoost + (STATE.upgrades.aero+STATE.upgrades.pu)*2;
   document.getElementById('sideReli').textContent = team.reliability + STATE.carReliabilityBoost + STATE.upgrades.rel*2;
+  document.getElementById('sideCap').textContent = `$${STATE.capUsed}M / $${COST_CAP}M`;
 
   renderHubMain();
 }
@@ -245,21 +220,18 @@ function renderConfBox(){
     <div class="conf-bar"><div class="conf-fill" style="width:${c}%;background:${col}"></div></div>
   `;
 }
-
 function renderObjectiveBox(){
   const team = myTeam();
   const obj = TIER_OBJECTIVES[team.tier];
   const cons = getConstructorsStandings();
   const myPos = cons.findIndex(s=>s.teamId===team.id)+1 || TEAMS.length;
   const racesLeft = TRACKS.length - STATE.round;
-
-  let status = 'on-track', label = 'On track';
+  let status='on-track', label='On track';
   if(STATE.round===0){ status='on-track'; label='Season not started'; }
   else if(myPos <= obj.conText){ status='met'; label='Meeting expectations'; }
   else if(myPos <= obj.conText+2){ status='at-risk'; label='At risk'; }
   else if(racesLeft<4){ status='failed'; label='Falling short'; }
   else { status='at-risk'; label='Behind target'; }
-
   document.getElementById('objectiveBox').innerHTML = `
     <div class="obj-item ${status}">
       <div class="obj-title">${obj.label}</div>
@@ -267,22 +239,17 @@ function renderObjectiveBox(){
     </div>
   `;
 }
-
 function getConstructorsStandings(){
-  return TEAMS.map(t=>({teamId:t.id, points:STATE.constructorsPoints[t.id]||0}))
-    .sort((a,b)=>b.points-a.points);
+  return TEAMS.map(t=>({teamId:t.id, points:STATE.constructorsPoints[t.id]||0})).sort((a,b)=>b.points-a.points);
 }
 function getDriversStandings(){
-  return Object.entries(STATE.driversPoints).map(([abbr,points])=>({abbr,points}))
-    .sort((a,b)=>b.points-a.points);
+  return Object.entries(STATE.driversPoints).map(([abbr,points])=>({abbr,points})).sort((a,b)=>b.points-a.points);
 }
 
 function renderHubMain(){
   const main = document.getElementById('hubMain');
   if(STATE.round >= TRACKS.length){ main.innerHTML = renderSeasonEndHTML(); bindSeasonEnd(); return; }
   const track = currentTrack();
-  const team = myTeam();
-
   main.innerHTML = `
     <div class="hub-section">
       <div class="hub-section-title">Next race</div>
@@ -311,19 +278,20 @@ function renderHubMain(){
 
     <div class="hub-section">
       <div class="hub-section-title">Engineering staff</div>
-      <div class="hub-section-sub">Skill above 60 boosts your car's pace or reliability.</div>
+      <div class="hub-section-sub">Skill above 60 boosts your car.</div>
       <div class="roster-grid" id="rosterGrid"></div>
       <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-ghost btn-sm" id="btnOpenHiring">View candidates</button>
+        <button class="btn btn-ghost btn-sm" id="btnOpenHiring">Candidates</button>
         <button class="btn btn-ghost btn-sm" id="btnOpenUpgrades">Develop car</button>
+        <button class="btn btn-ghost btn-sm" id="btnOpenMarket">Driver market</button>
         <button class="btn btn-ghost btn-sm" id="btnOpenArchive">Season archive</button>
       </div>
     </div>
   `;
-
   document.getElementById('btnStartWeekend').addEventListener('click', ()=>startWeekend());
   document.getElementById('btnOpenHiring').addEventListener('click', openHiringModal);
   document.getElementById('btnOpenUpgrades').addEventListener('click', openUpgradesModal);
+  document.getElementById('btnOpenMarket').addEventListener('click', openMarketModal);
   document.getElementById('btnOpenArchive').addEventListener('click', openArchiveModal);
 
   const consBody = document.getElementById('consTableBody');
@@ -352,7 +320,6 @@ function renderHubMain(){
     rosterGrid.appendChild(card);
   });
 }
-
 function skillColor(s){ return s>=85?'var(--green)':s>=65?'var(--cyan)':s>=45?'var(--amber)':'var(--red)'; }
 function weatherLabel(t){
   if(t.baseline==='wet-drying') return '🌧 Starts wet, drying';
@@ -392,24 +359,20 @@ function renderSeasonEndHTML(){
   `;
 }
 function bindSeasonEnd(){
-  const btn = document.getElementById('btnNextSeason');
-  if(btn) btn.addEventListener('click', advanceSeason);
+  document.getElementById('btnNextSeason')?.addEventListener('click', advanceSeason);
 }
-
 function advanceSeason(){
-  // Archive
   STATE.seasonArchive.push({
     season: STATE.season,
     championTeam: getConstructorsStandings()[0].teamId,
     championDriver: getDriversStandings()[0].abbr,
     myPos: getConstructorsStandings().findIndex(s=>s.teamId===STATE.myTeamId)+1,
   });
-  // Reset season
   STATE.season++;
   STATE.round = 0;
+  STATE.capUsed = 0;
   STATE.constructorsPoints = Object.fromEntries(TEAMS.map(t=>[t.id,0]));
   STATE.driversPoints = Object.fromEntries(TEAMS.flatMap(t=>t.drivers.map(d=>[d.abbr,0])));
-  // End-of-season bonus + engineer growth
   STATE.budget += (SEASON_END_BONUS[myTeam().tier] || 40);
   Object.values(STATE.engineers).forEach(e=>{ e.skill = clamp(e.skill + rand(0,3), 20, 99); });
   recalcCarBoosts();
@@ -488,30 +451,31 @@ function recalcCarBoosts(){
   const a = STATE.engineers.aero.skill;
   const p = STATE.engineers.perf.skill;
   const r = STATE.engineers.reliability.skill;
-  const s = STATE.engineers.strategist.skill;
   STATE.carPaceBoost = Math.round(((a-60)+(p-60))/2 / 6);
   STATE.carReliabilityBoost = Math.round((r-60)/6);
-  STATE.strategyBoost = Math.round((s-60)/8);
 }
 
-// ===================== UPGRADES =====================
+// ===================== UPGRADES (with cost cap + lead time) =====================
 function openUpgradesModal(){
   const slots = ['aero','pu','rel','strat'];
   const labels = { aero:'Aero Package', pu:'Power Unit', rel:'Reliability', strat:'Strategy Dept' };
   const cost = lvl => 15 + lvl*10;
   const render = ()=> openModal(`
     <h2>Car development</h2>
-    <p>Budget: <b style="color:var(--amber)">$${STATE.budget}M</b>. Each upgrade adds +2 to a performance stat.</p>
+    <p>Budget: <b style="color:var(--amber)">$${STATE.budget}M</b> · Cost cap used <b>$${STATE.capUsed}M / $${COST_CAP}M</b></p>
+    <p style="font-size:11.5px">Upgrades take 2 races to arrive. Applied automatically.</p>
+    ${STATE.pendingUpgrades.map(u=>`<div class="save-slot"><div><div style="font-weight:700">${labels[u.slot]} +2</div><div class="meta">Arrives in ${u.arrivesInRace - STATE.round} races</div></div></div>`).join('')}
     ${slots.map(s=>{
       const lvl = STATE.upgrades[s];
       const c = cost(lvl);
-      const canDo = STATE.budget >= c;
+      const canDo = STATE.budget >= c && STATE.capUsed + c <= COST_CAP;
+      const reason = STATE.capUsed + c > COST_CAP ? 'Cost cap hit' : (STATE.budget < c ? 'No budget' : '');
       return `<div class="save-slot">
         <div>
           <div style="font-weight:700">${labels[s]}</div>
-          <div class="meta">Level ${lvl} · Next: $${c}M</div>
+          <div class="meta">Level ${lvl} · Next: $${c}M ${reason?`(${reason})`:''}</div>
         </div>
-        <button class="btn btn-sm ${canDo?'btn-primary':'btn-ghost'}" data-up="${s}" ${canDo?'':'disabled'}>Upgrade +2</button>
+        <button class="btn btn-sm ${canDo?'btn-primary':'btn-ghost'}" data-up="${s}" ${canDo?'':'disabled'}>Develop +2</button>
       </div>`;
     }).join('')}
     <div class="modal-actions"><button class="btn btn-ghost btn-sm" id="btnCloseUpgrades">Close</button></div>
@@ -521,15 +485,89 @@ function openUpgradesModal(){
     document.querySelectorAll('[data-up]').forEach(b=>b.addEventListener('click', ()=>{
       const s = b.dataset.up;
       const c = cost(STATE.upgrades[s]);
-      if(STATE.budget < c) return;
+      if(STATE.budget < c || STATE.capUsed + c > COST_CAP) return;
       STATE.budget -= c;
-      STATE.upgrades[s]++;
+      STATE.capUsed += c;
+      STATE.pendingUpgrades.push({ slot:s, arrivesInRace: STATE.round + 2, amount: 2 });
       saveToSlot(activeSlot);
       render(); bind();
     }));
     document.getElementById('btnCloseUpgrades').addEventListener('click', ()=>{ closeModal(); renderHub(); });
   };
   bind();
+}
+function applyPendingUpgrades(){
+  STATE.pendingUpgrades = STATE.pendingUpgrades.filter(u=>{
+    if(STATE.round >= u.arrivesInRace){
+      STATE.upgrades[u.slot] += u.amount;
+      return false;
+    }
+    return true;
+  });
+}
+
+// ===================== DRIVER MARKET =====================
+function openMarketModal(){
+  // Generate offers once per season-end window (or if empty)
+  if(STATE.marketOffers.length===0) STATE.marketOffers = generateMarketOffers();
+  openModal(`
+    <h2>Driver market</h2>
+    <p>Swap one of your drivers for a free agent. Costs budget and may upset team morale.</p>
+    <div id="marketList"></div>
+    <div class="modal-actions"><button class="btn btn-ghost btn-sm" id="btnCloseMarket">Close</button></div>
+  `);
+  const list = document.getElementById('marketList');
+  STATE.marketOffers.forEach(o=>{
+    const card = document.createElement('div');
+    card.className = 'candidate-card';
+    card.innerHTML = `
+      <div class="candidate-info">
+        <div class="candidate-name">${o.name}</div>
+        <div class="candidate-role">Free agent · ${o.skill} skill</div>
+        <div class="candidate-stats">
+          <span class="team-stat-mini">CONSISTENCY <b>${o.consistency}</b></span>
+          <span class="candidate-cost">$${o.cost}M</span>
+        </div>
+      </div>
+      <button class="btn btn-sm ${STATE.budget>=o.cost?'btn-primary':'btn-ghost'}" data-offer="${o.id}" ${STATE.budget<o.cost?'disabled':''}>Sign</button>
+    `;
+    list.appendChild(card);
+  });
+  list.querySelectorAll('[data-offer]').forEach(b=>b.addEventListener('click', ()=>{
+    const o = STATE.marketOffers.find(x=>x.id===b.dataset.offer);
+    if(!o || STATE.budget < o.cost) return;
+    // Replace the weaker of the two drivers (or user picks — keep simple: weakest)
+    const team = myTeam();
+    const weakest = team.drivers.slice().sort((a,b)=>a.skill-b.skill)[0];
+    if(!confirm(`Replace ${weakest.name} with ${o.name}?`)) return;
+    STATE.budget -= o.cost;
+    // Swap
+    const idx = team.drivers.indexOf(weakest);
+    team.drivers[idx] = { name:o.name, abbr:o.abbr, skill:o.skill, consistency:o.consistency };
+    // Update standings keys
+    delete STATE.driversPoints[weakest.abbr];
+    STATE.driversPoints[o.abbr] = 0;
+    STATE.driverTeam[o.abbr] = team.id;
+    delete STATE.driverTeam[weakest.abbr];
+    STATE.marketOffers = STATE.marketOffers.filter(x=>x.id!==o.id);
+    saveToSlot(activeSlot);
+    closeModal(); renderHub();
+  }));
+  document.getElementById('btnCloseMarket').addEventListener('click', closeModal);
+}
+function generateMarketOffers(){
+  const pool = [
+    { name:'Daniel Ricciardo', abbr:'RIC', skill:82, consistency:82, cost:18 },
+    { name:'Mick Schumacher',  abbr:'MSC', skill:76, consistency:76, cost:12 },
+    { name:'Zhou Guanyu',      abbr:'ZHO', skill:77, consistency:78, cost:13 },
+    { name:'Kevin Magnussen',  abbr:'MAG', skill:79, consistency:79, cost:14 },
+    { name:'Jack Doohan',      abbr:'DOO', skill:74, consistency:74, cost:10 },
+    { name:'Theo Pourchaire',  abbr:'POU', skill:73, consistency:73, cost:9  },
+    { name:'Robert Shwartzman',abbr:'SHW', skill:75, consistency:76, cost:11 },
+    { name:'Felipe Drugovich', abbr:'DRU', skill:75, consistency:75, cost:11 },
+  ];
+  // Pick 4 randomly, id them
+  return pool.sort(()=>Math.random()-0.5).slice(0,4).map((p,i)=>({ ...p, id:'off_'+Date.now()+'_'+i }));
 }
 
 // ===================== ARCHIVE =====================
@@ -538,7 +576,7 @@ function openArchiveModal(){
     <div class="save-slot">
       <div>
         <div style="font-weight:700">Season ${a.season}</div>
-        <div class="meta">Champion: ${a.championTeam.toUpperCase()} · Driver: ${a.championDriver} · You finished P${a.myPos}</div>
+        <div class="meta">Champion: ${teamById(a.championTeam).name} · Driver: ${a.championDriver} · You finished P${a.myPos}</div>
       </div>
     </div>
   `).join('') || '<p class="meta">No seasons archived yet.</p>';
@@ -550,12 +588,36 @@ function openArchiveModal(){
   document.getElementById('btnCloseArchive').addEventListener('click', closeModal);
 }
 
-// ===================== RACE SIM (called from weekend.js) =====================
+// ===================== RACE SIM =====================
 const POINTS_TABLE = [25,18,15,12,10,8,6,4,2,1];
 let RACE = null;
 let raceInterval = null;
 let raceSpeed = 1;
 let racePaused = false;
+
+function startRace(gridOverride, strategyOverride){
+  const track = currentTrack();
+  RACE = buildRaceState(track, gridOverride);
+  RACE.drivers.forEach(d=>{
+    const s = strategyOverride && strategyOverride[d.abbr];
+    if(s){
+      if(s.tyre) d.tyre = s.tyre;
+      d.pitPlan = s.plan || '1-stop';
+      d.orders = s.orders || 'fight';
+    } else {
+      d.tyre = aiStartTyre(track);
+      d.pitPlan = Math.random()<0.5?'1-stop':'2-stop';
+    }
+    // Set initial pit window
+    d.nextPitLap = d.pitPlan==='2-stop' ? Math.round(track.laps*randf(0.28,0.36)) : Math.round(track.laps*randf(0.42,0.58));
+  });
+  showScreen('screen-race');
+  initRaceUI(track);
+  renderTower();
+  raceSpeed = 1; racePaused = false;
+  setSpeedButtons();
+  runRaceLoop();
+}
 
 function buildRaceState(track, gridOverride){
   const laps = track.laps;
@@ -568,17 +630,37 @@ function buildRaceState(track, gridOverride){
     gapToLeader: 0, interval: 0,
     tyre:'M', tyreAge:0, pitStops:0, pitHistory:[],
     retired:false, retiredReason:null, retiredLap:null,
-    damage:0, penaltyPending:0, penaltyServed:false,
+    damage:0, penaltyLapsLeft:0, penaltyApplied: false,
     strategyPending:false,
-    finishPos:null,
+    distanceCovered: 0, // accumulated track distance in laps
+    fuel: 100,          // percent
+    ers: 'balanced',
+    radioEffect: null,  // { paceBonus, degMult, untilLap }
+    sectorTimes: [[0,0,0],[0,0,0],[0,0,0]], // [stintIndex][sector] best
+    bestSector: [0,0,0],
+    lastSectors: [0,0,0],
+    fastestLap: null,
+    lapTimes: [],
+    pitFlashUntilLap: 0,
+    penaltyFlashUntilLap: 0,
+    _pitTimer: 0,
+    _justPitted: false,
   }));
   return {
     track, laps, wetness, lap:0,
-    flag:'green', flagLapsRemaining:0,
+    flag:'green',
+    sectors: ['green','green','green'], // per-sector flag state
+    sectorYellowUntil: [0,0,0],
+    vscLapsRemaining: 0,
+    scLapsRemaining: 0,
+    redFlagActive: false,
+    redFlagModalPending: false,
     drivers, finished:false, feed:[],
     myTeamId: STATE.myTeamId,
     pendingDecision:null,
     _lastWetBand: undefined,
+    fastestLapHolder: null,
+    fastestLapTime: null,
   };
 }
 
@@ -603,47 +685,18 @@ function computeWetnessCurve(track, laps){
   }
   return curve;
 }
-
 function buildDefaultGrid(){
   const entries = [];
   TEAMS.forEach(team=>{
     const effPace = team.pace + (team.id===STATE.myTeamId?STATE.carPaceBoost:0) + (team.id===STATE.myTeamId?(STATE.upgrades.aero+STATE.upgrades.pu)*2:0);
     team.drivers.forEach(drv=>{
-      const qualiScore = effPace*0.6 + drv.skill*0.4 + randf(-3,3);
-      entries.push({ abbr:drv.abbr, name:drv.name, teamId:team.id, skill:drv.skill, consistency:drv.consistency, effPace, qualiScore });
+      const q = effPace*0.6 + drv.skill*0.4 + randf(-3,3);
+      entries.push({ abbr:drv.abbr, name:drv.name, teamId:team.id, skill:drv.skill, consistency:drv.consistency, effPace, qualiScore:q });
     });
   });
   entries.sort((a,b)=>b.qualiScore-a.qualiScore);
   return entries;
 }
-
-function startRace(gridOverride, strategyOverride){
-  const track = currentTrack();
-  RACE = buildRaceState(track, gridOverride);
-  // Apply player strategy to their cars
-  if(strategyOverride){
-    RACE.drivers.forEach(d=>{
-      const s = strategyOverride[d.abbr];
-      if(s){
-        if(s.tyre) d.tyre = s.tyre;
-        if(s.plan) d.pitPlan = s.plan;
-        if(s.orders) d.orders = s.orders;
-      } else {
-        // AI starting tyres
-        d.tyre = aiStartTyre(track);
-      }
-    });
-  } else {
-    RACE.drivers.forEach(d=>{ d.tyre = aiStartTyre(track); });
-  }
-  showScreen('screen-race');
-  initRaceUI(track);
-  renderTower();
-  raceSpeed = 1; racePaused = false;
-  setSpeedButtons();
-  runRaceLoop();
-}
-
 function aiStartTyre(track){
   const t = track.trackTempC;
   const r = Math.random();
@@ -660,10 +713,20 @@ function initRaceUI(track){
   document.getElementById('lapTotal').textContent = track.laps;
   document.getElementById('lapNow').textContent = 0;
   updateWeatherChip();
-  setFlag('green');
+  setFlagUI();
   document.getElementById('feedScroll').innerHTML = '';
+  document.getElementById('msgScroll').innerHTML = '';
   pushFeed(0, `Lights out at ${track.name}.`, 'good');
+  pushMsg('system', 'Pit Wall', `Radio link open. Commands active all race.`);
   document.getElementById('decisionBar').classList.remove('active');
+  // Populate radio driver select
+  const sel = document.getElementById('radioDriver');
+  sel.innerHTML = myTeam().drivers.map(d=>`<option value="${d.abbr}">${d.name} (${d.abbr})</option>`).join('');
+  // Populate radio buttons
+  const wrap = document.getElementById('radioButtons');
+  wrap.innerHTML = RADIO_COMMANDS.map(c=>`<button class="btn btn-ghost btn-sm" data-radio="${c.key}">${c.label}</button>`).join('');
+  wrap.querySelectorAll('[data-radio]').forEach(b=>b.addEventListener('click', ()=>sendRadio(b.dataset.radio)));
+  renderSectorLegend();
 }
 
 function updateWeatherChip(){
@@ -676,12 +739,33 @@ function updateWeatherChip(){
   document.getElementById('weatherChip').innerHTML = label;
 }
 
-function setFlag(flag){
-  RACE.flag = flag;
+function setFlagUI(){
+  // Overall flag reflects: if any sector red -> YELLOW overall; if 2+ reds or redFlagActive -> RED;
+  // if SC active -> SC; if VSC -> VSC; else green (or yellow if any sector yellow).
+  let overall = 'green';
+  const redCount = RACE.sectors.filter(s=>s==='red').length;
+  const yellowCount = RACE.sectors.filter(s=>s==='yellow').length;
+  if(RACE.redFlagActive) overall = 'red';
+  else if(redCount >= 2) overall = 'red';
+  else if(RACE.scLapsRemaining > 0) overall = 'sc';
+  else if(RACE.vscLapsRemaining > 0) overall = 'vsc';
+  else if(redCount >= 1 || yellowCount >= 1) overall = 'yellow';
+  RACE.flag = overall;
   const el = document.getElementById('flagIndicator');
-  el.className = 'flag-indicator flag-'+flag;
-  el.textContent = {green:'Green',yellow:'Yellow',vsc:'VSC',sc:'Safety Car',red:'Red Flag',checkered:'Finished'}[flag] || flag;
-  if(STATE.settings.sound) beep(flag);
+  el.className = 'flag-indicator flag-'+overall;
+  el.textContent = {green:'Green',yellow:'Yellow',vsc:'VSC',sc:'Safety Car',red:'Red Flag',checkered:'Finished'}[overall] || overall;
+  renderSectorLegend();
+}
+
+function renderSectorLegend(){
+  const el = document.getElementById('sectorLegend');
+  if(!el) return;
+  const s = RACE.sectors;
+  el.innerHTML = `
+    <div class="row"><span class="dot ${s[0]}"></span> Sector 1</div>
+    <div class="row"><span class="dot ${s[1]}"></span> Sector 2</div>
+    <div class="row"><span class="dot ${s[2]}"></span> Sector 3</div>
+  `;
 }
 
 function flashBanner(text, kind){
@@ -691,37 +775,38 @@ function flashBanner(text, kind){
   setTimeout(()=>b.classList.remove('show'), 2200);
 }
 
-// ---- WebAudio beep ----
+// Audio
 let audioCtx = null;
 function beep(kind){
+  if(!STATE || !STATE.settings.sound) return;
   try{
     if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
     const o = audioCtx.createOscillator();
     const g = audioCtx.createGain();
     o.connect(g); g.connect(audioCtx.destination);
-    const f = { green:440, yellow:330, vsc:330, sc:330, red:220, checkered:660 }[kind] || 440;
+    const f = { green:440, yellow:330, vsc:330, sc:330, red:220, checkered:660, pit:600, radio:520 }[kind] || 440;
     o.frequency.value = f;
-    g.gain.value = 0.05;
+    g.gain.value = 0.04;
     o.start();
-    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.3);
-    o.stop(audioCtx.currentTime + 0.3);
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.25);
+    o.stop(audioCtx.currentTime + 0.25);
   }catch(e){}
 }
 
-// view toggle
-document.getElementById('viewTowerBtn').addEventListener('click', ()=>{
-  document.getElementById('viewTowerBtn').classList.add('active');
-  document.getElementById('viewTrackBtn').classList.remove('active');
-  document.getElementById('towerWrap').style.display='block';
-  document.getElementById('trackWrap').style.display='none';
-});
-document.getElementById('viewTrackBtn').addEventListener('click', ()=>{
-  document.getElementById('viewTrackBtn').classList.add('active');
-  document.getElementById('viewTowerBtn').classList.remove('active');
-  document.getElementById('towerWrap').style.display='none';
-  document.getElementById('trackWrap').style.display='flex';
-  drawTrackView();
-});
+// Tabs
+document.getElementById('tabTower').addEventListener('click', ()=>setRaceTab('tower'));
+document.getElementById('tabTrack').addEventListener('click', ()=>setRaceTab('track'));
+document.getElementById('tabMessages').addEventListener('click', ()=>setRaceTab('messages'));
+function setRaceTab(t){
+  ['Tower','Track','Messages'].forEach(x=>{
+    document.getElementById('tab'+x).classList.toggle('active', x.toLowerCase()===t);
+  });
+  document.getElementById('towerWrap').style.display = t==='tower'?'block':'none';
+  document.getElementById('trackWrap').style.display = t==='track'?'flex':'none';
+  document.getElementById('messagesWrap').style.display = t==='messages'?'flex':'none';
+  if(t==='track') drawTrackView();
+  if(t==='messages') document.getElementById('msgBadge').style.display='none';
+}
 
 function setSpeedButtons(){
   ['speedPause','speed1','speed2','speed4'].forEach(id=>document.getElementById(id).classList.remove('active'));
@@ -734,16 +819,31 @@ document.getElementById('speedPause').addEventListener('click', ()=>{ racePaused
 document.getElementById('speed1').addEventListener('click', ()=>{ racePaused=false; raceSpeed=1; setSpeedButtons(); });
 document.getElementById('speed2').addEventListener('click', ()=>{ racePaused=false; raceSpeed=2; setSpeedButtons(); });
 document.getElementById('speed4').addEventListener('click', ()=>{ racePaused=false; raceSpeed=4; setSpeedButtons(); });
+document.getElementById('speedSkip').addEventListener('click', ()=>{
+  if(!RACE || RACE.finished) return;
+  racePaused = true;
+  // Fast-forward in a tight loop
+  const safety = RACE.laps * 3;
+  let guard = 0;
+  while(!RACE.finished && guard++ < safety){
+    simulateLap(true);
+  }
+  renderTower();
+  if(RACE.finished){
+    if(raceInterval) clearInterval(raceInterval);
+    setTimeout(showRaceResults, 500);
+  }
+});
 
 function runRaceLoop(){
   if(raceInterval) clearInterval(raceInterval);
   const totalMs = 5*60*1000;
   const baseTickMs = totalMs/RACE.track.laps;
   raceInterval = setInterval(()=>{
-    if(racePaused || RACE.pendingDecision) return;
+    if(racePaused || RACE.pendingDecision || RACE.redFlagModalPending) return;
     for(let i=0;i<raceSpeed;i++){
       if(RACE.finished) break;
-      simulateLap();
+      simulateLap(false);
     }
     renderTower();
     if(document.getElementById('trackWrap').style.display!=='none') drawTrackView();
@@ -754,35 +854,88 @@ function runRaceLoop(){
   }, baseTickMs);
 }
 
-function simulateLap(){
-  if(RACE.flag==='red') return;
+// ===================== LAP SIM =====================
+function simulateLap(silent){
+  if(RACE.redFlagActive || RACE.finished) return;
+
+  // Advance pit timers and any pending pit stops
+  RACE.drivers.forEach(d=>{
+    if(d._pitTimer > 0){
+      d._pitTimer--;
+      if(d._pitTimer===0){
+        d.tyre = d._pendingTyre || 'M';
+        d._pendingTyre = null;
+        d.tyreAge = 0;
+        d._justPitted = true;
+        d.pitFlashUntilLap = RACE.lap + 2;
+        pushFeed(RACE.lap, `<b>${d.abbr}</b> rejoins on ${COMPOUNDS[d.tyre].name}.`, 'pit');
+      }
+    }
+  });
+
   RACE.lap++;
   const track = RACE.track;
   const wet = RACE.wetness[Math.min(RACE.lap-1, RACE.wetness.length-1)] || 0;
-  document.getElementById('lapNow').textContent = RACE.lap;
-  updateWeatherChip();
+  if(!silent){
+    document.getElementById('lapNow').textContent = RACE.lap;
+    updateWeatherChip();
+  }
 
-  if(RACE.flag==='vsc' || RACE.flag==='sc' || RACE.flag==='yellow'){
-    RACE.flagLapsRemaining--;
-    if(RACE.flagLapsRemaining<=0){
-      setFlag('green');
-      pushFeed(RACE.lap, `Track clear. Green flag.`, 'good');
-      flashBanner('Green Flag', 'green');
+  // Sector flag decay
+  for(let s=0;s<3;s++){
+    if(RACE.sectorYellowUntil[s] && RACE.lap >= RACE.sectorYellowUntil[s]){
+      if(RACE.sectors[s] === 'yellow'){
+        RACE.sectors[s] = 'green';
+      }
+      RACE.sectorYellowUntil[s] = 0;
     }
   }
+  // SC/VSC countdown
+  if(RACE.scLapsRemaining > 0){
+    RACE.scLapsRemaining--;
+    if(RACE.scLapsRemaining===0) pushFeed(RACE.lap, `Green flag. Racing resumes.`, 'good');
+  }
+  if(RACE.vscLapsRemaining > 0){
+    RACE.vscLapsRemaining--;
+    if(RACE.vscLapsRemaining===0) pushFeed(RACE.lap, `Green flag. Racing resumes.`, 'good');
+  }
+  setFlagUI();
 
   announceWeatherShift(wet);
 
   const active = RACE.drivers.filter(d=>!d.retired);
   active.forEach(d=>{
-    d.lastLapDelta = computeLapTime(d, track, wet);
-    d.totalTime += d.lastLapDelta;
+    const sectors = computeSectors(d, track, wet);
+    d.lastSectors = sectors;
+    for(let s=0;s<3;s++){
+      if(!d.bestSector[s] || sectors[s] < d.bestSector[s]){
+        d.bestSector[s] = sectors[s];
+      }
+    }
+    const lapTime = sectors[0]+sectors[1]+sectors[2];
+    d.totalTime += lapTime;
     d.tyreAge++;
+    d.distanceCovered += 1; // one lap's worth of distance
+    d.lastLapTime = lapTime;
+    d.lapTimes.push(lapTime);
+    d.fuel = Math.max(0, d.fuel - 1.6); // fuel burn per lap
+    // Radio effect expiry
+    if(d.radioEffect && RACE.lap >= d.radioEffect.untilLap) d.radioEffect = null;
+    // Penalty flash
+    if(d.penaltyFlashUntilLap && RACE.lap > d.penaltyFlashUntilLap) d.penaltyFlashUntilLap = 0;
   });
+
+  // Fastest lap
+  const fastest = active.slice().sort((a,b)=>a.lastLapTime-b.lastLapTime)[0];
+  if(fastest && (!RACE.fastestLapTime || fastest.lastLapTime < RACE.fastestLapTime)){
+    RACE.fastestLapTime = fastest.lastLapTime;
+    RACE.fastestLapHolder = fastest.abbr;
+    pushFeed(RACE.lap, `⏱ <b>${fastest.abbr}</b> sets the fastest lap.`, 'good');
+  }
 
   checkIncidents(active);
 
-  // Sort by total time (retired at bottom)
+  // Re-order
   RACE.drivers.sort((a,b)=>{
     if(a.retired && !b.retired) return 1;
     if(!a.retired && b.retired) return -1;
@@ -798,8 +951,6 @@ function simulateLap(){
       d.gapToLeader = d.totalTime - leaderTime;
       d.interval = prevTime ? (d.totalTime - prevTime) : 0;
       prevTime = d.totalTime;
-    } else {
-      d.gapToLeader = 0; d.interval = 0;
     }
   });
 
@@ -807,26 +958,12 @@ function simulateLap(){
     if(d.retired) return;
     maybeAIPitStop(d, track, wet);
   });
-
   maybeQueuePlayerDecision(active, track, wet);
-  maybeRandomFlagEvent(track);
 
   if(RACE.lap >= RACE.laps) finishRace();
 }
 
-function announceWeatherShift(wet){
-  if(RACE._lastWetBand===undefined) RACE._lastWetBand = wet>0.5?'wet':(wet>0.1?'damp':'dry');
-  const band = wet>0.5?'wet':(wet>0.1?'damp':'dry');
-  if(band!==RACE._lastWetBand){
-    if(band==='wet'){ pushFeed(RACE.lap, `Rain intensifying — track is wet.`, 'flag'); flashBanner('Rain Falling','yellow'); }
-    else if(band==='damp' && RACE._lastWetBand==='dry'){ pushFeed(RACE.lap, `Spots of rain on track.`, 'flag'); flashBanner('Rain Starting','yellow'); }
-    else if(band==='damp' && RACE._lastWetBand==='wet'){ pushFeed(RACE.lap, `Track beginning to dry.`, 'good'); }
-    else if(band==='dry'){ pushFeed(RACE.lap, `Track fully dry now.`, 'good'); }
-    RACE._lastWetBand = band;
-  }
-}
-
-function computeLapTime(d, track, wet){
+function computeSectors(d, track, wet){
   const team = teamById(d.teamId);
   const effPace = team.pace + (team.id===STATE.myTeamId?STATE.carPaceBoost:0) + (team.id===STATE.myTeamId?(STATE.upgrades.aero+STATE.upgrades.pu)*2:0);
   const comp = COMPOUNDS[d.tyre];
@@ -847,18 +984,56 @@ function computeLapTime(d, track, wet){
     if(d.tyre==='W' && wet<0.35) wetPenalty = (0.35-wet)*2.5;
   }
 
+  const fuelPenalty = (d.fuel - 50) * 0.01; // lighter car = faster
+  const ers = ERS_MODES[d.ers] || ERS_MODES.balanced;
+  const ersBonus = -ers.paceBonus * 20;
+
+  let radioBonus = 0;
+  let radioDegMult = 1;
+  if(d.radioEffect){
+    radioBonus = -(d.radioEffect.paceBonus || 0) * 20;
+    radioDegMult = d.radioEffect.degMult || 1;
+  }
+
   let dmgPenalty = d.damage * 0.6;
 
-  const variance = randf(-1,1) * (1 - d.consistency/140);
+  // Sector yellow/red impact
+  // For each sector, add extra time if that sector is under yellow or red
+  const sectorList = [];
+  for(let s=0;s<3;s++){
+    let sectorBase = (base + degPenalty + tempPenalty + wetPenalty + fuelPenalty + ersBonus + radioBonus + dmgPenalty) / 3;
+    // variance per sector
+    sectorBase += randf(-0.4, 0.4) * (1 - d.consistency/140);
+    if(RACE.sectors[s]==='yellow') sectorBase += 0.35;
+    if(RACE.sectors[s]==='red')    sectorBase += 1.2;
+    if(RACE.scLapsRemaining>0) sectorBase *= 1.55;
+    else if(RACE.vscLapsRemaining>0) sectorBase *= 1.35;
+    sectorList.push(sectorBase);
+  }
 
-  let flagMult = 1;
-  if(RACE.flag==='vsc') flagMult = 1.35;
-  else if(RACE.flag==='sc') flagMult = 1.55;
+  // Penalty handling: add penalty to S1 of the lap after serving begins
+  if(d.penaltyApplied) d.penaltyApplied = false; // reset flag
+  if(d.penaltyLapsLeft > 0){
+    sectorList[0] += 5;
+    d.penaltyLapsLeft--;
+  }
 
-  let penalty = 0;
-  if(d.penaltyPending > 0){ penalty = 5; d.penaltyPending--; }
+  // Apply tyre degradation multiplier from radio (compound wear rate doubles per stint if push)
+  d.tyreAge += 0; // already incremented once per lap, adding more would be wrong; keep for future
 
-  return Math.max((base + degPenalty + tempPenalty + wetPenalty + dmgPenalty + variance + penalty) * flagMult, 5);
+  return sectorList;
+}
+
+function announceWeatherShift(wet){
+  if(RACE._lastWetBand===undefined) RACE._lastWetBand = wet>0.5?'wet':(wet>0.1?'damp':'dry');
+  const band = wet>0.5?'wet':(wet>0.1?'damp':'dry');
+  if(band!==RACE._lastWetBand){
+    if(band==='wet'){ pushFeed(RACE.lap, `Rain intensifying — track is wet.`, 'flag'); flashBanner('Rain Falling','yellow'); }
+    else if(band==='damp' && RACE._lastWetBand==='dry'){ pushFeed(RACE.lap, `Spots of rain on track.`, 'flag'); flashBanner('Rain Starting','yellow'); }
+    else if(band==='damp' && RACE._lastWetBand==='wet'){ pushFeed(RACE.lap, `Track beginning to dry.`, 'good'); }
+    else if(band==='dry'){ pushFeed(RACE.lap, `Track fully dry now.`, 'good'); }
+    RACE._lastWetBand = band;
+  }
 }
 
 function checkIncidents(active){
@@ -867,29 +1042,65 @@ function checkIncidents(active){
     if(d.retired) return;
     const team = teamById(d.teamId);
     const effReli = team.reliability + (team.id===STATE.myTeamId?STATE.carReliabilityBoost:0) + (team.id===STATE.myTeamId?STATE.upgrades.rel*2:0);
-    const failChance = (100-effReli) * 0.0006;
-    const crashChance = (100-d.consistency)*0.00025 + wet*0.0022 + (d.tyreAge>28?0.0012:0) + d.damage*0.001;
+    const ers = ERS_MODES[d.ers] || ERS_MODES.balanced;
+
+    // Reliability: floor. Target ~1 DNF per 12 races per car.
+    const failChance = ((100-effReli) * 0.00022) * ers.reliabilityRisk;
+    // Crash: reduced. Wet doubles, wear adds a bit.
+    const baseCrash = (100-d.consistency)*0.00008;
+    const wetRisk = wet * 0.0008;
+    const wearRisk = d.tyreAge > 28 ? 0.0004 : 0;
+    const crashChance = (baseCrash + wetRisk + wearRisk) * (d.damage > 0 ? 1.6 : 1.0);
 
     const roll = Math.random();
     if(roll < failChance){
       retireDriver(d, 'mechanical');
     } else if(roll < failChance + crashChance){
-      // Damage but not always out
-      if(Math.random() < 0.35){
+      // Crash: most result in damage, some retire
+      if(Math.random() < 0.70){
+        // Damage but stays in race
         d.damage = clamp(d.damage + rand(1,3), 0, 5);
         pushFeed(RACE.lap, `<b>${d.abbr}</b> picks up damage after contact.`, 'danger');
-        if(d.teamId===STATE.myTeamId) flashBanner('Damage!','red');
+        if(d.teamId===STATE.myTeamId) flashBanner('Damage!','yellow');
+        triggerSectorYellow();
+        // 30% chance another car gets a penalty
+        if(Math.random() < 0.3){
+          const other = pick(active.filter(x=>x!==d && !x.retired));
+          if(other){
+            other.penaltyLapsLeft = 1;
+            other.penaltyApplied = false;
+            other.penaltyFlashUntilLap = RACE.lap + 3;
+            pushFeed(RACE.lap, `<b>${other.abbr}</b> given 5s penalty for causing a collision.`, 'danger');
+          }
+        }
       } else {
+        // Outright DNF from a crash (rarer)
         retireDriver(d, 'crash');
+        if(Math.random() < 0.4) startSafetyCar(); else startVSC();
+        triggerSectorYellow();
       }
     }
-    // Pit crew error chance
-    if(d._justPitted && Math.random() < 0.02){
-      pushFeed(RACE.lap, `<b>${d.abbr}</b> — slow pit stop (unsafe release check).`, 'danger');
+    // Pit crew error
+    if(d._justPitted && Math.random() < 0.015){
+      pushFeed(RACE.lap, `<b>${d.abbr}</b> — slow pit stop.`, 'danger');
       d.totalTime += 4;
     }
     d._justPitted = false;
   });
+}
+
+function triggerSectorYellow(){
+  // Pick a random sector to yellow for 2-4 laps
+  const s = rand(0,2);
+  RACE.sectors[s] = 'yellow';
+  RACE.sectorYellowUntil[s] = RACE.lap + rand(2,4);
+  // If 2+ yellows, escalate to red in the worst sector
+  const yc = RACE.sectors.filter(x=>x==='yellow').length;
+  if(yc >= 2){
+    RACE.sectors[s] = 'red';
+    RACE.sectorYellowUntil[s] = RACE.lap + rand(1,3);
+  }
+  setFlagUI();
 }
 
 function retireDriver(d, reason){
@@ -899,97 +1110,147 @@ function retireDriver(d, reason){
   const label = reason==='mechanical' ? 'retires (mechanical)' : 'crashes out';
   pushFeed(RACE.lap, `<b>${d.abbr}</b> ${label}!`, 'danger');
   if(d.teamId===STATE.myTeamId) flashBanner(reason==='crash'?'Crash!':'Mechanical','red');
-  triggerFlagForIncident(reason);
-}
-
-function triggerFlagForIncident(reason){
-  if(RACE.flag==='red') return;
-  const roll = Math.random();
   if(reason==='crash'){
-    if(roll < 0.18) startRedFlag();
-    else if(roll < 0.55) startSafetyCar();
-    else startVSC();
+    // Escalate: 15% red flag, 25% SC, 30% VSC, 30% just yellow
+    const r = Math.random();
+    if(r < 0.15){
+      startRedFlag();
+    } else if(r < 0.40){
+      startSafetyCar();
+    } else if(r < 0.70){
+      startVSC();
+    } else {
+      triggerSectorYellow();
+    }
   } else {
-    if(roll < 0.35) startVSC();
-    else pushFeed(RACE.lap, `Yellow flag in the affected sector.`, 'flag');
+    if(Math.random() < 0.2) startVSC();
+    else triggerSectorYellow();
   }
 }
 
 function startVSC(){
-  if(RACE.flag==='sc'||RACE.flag==='red') return;
-  setFlag('vsc');
-  RACE.flagLapsRemaining = rand(2,4);
+  if(RACE.redFlagActive) return;
+  RACE.vscLapsRemaining = rand(2,3);
   pushFeed(RACE.lap, `Virtual Safety Car deployed.`, 'flag');
   flashBanner('Virtual Safety Car','yellow');
+  setFlagUI();
 }
 function startSafetyCar(){
-  setFlag('sc');
-  RACE.flagLapsRemaining = rand(3,6);
+  if(RACE.redFlagActive) return;
+  RACE.scLapsRemaining = rand(3,5);
   pushFeed(RACE.lap, `Safety Car deployed.`, 'flag');
   flashBanner('Safety Car','yellow');
+  setFlagUI();
 }
 function startRedFlag(){
-  setFlag('red');
-  RACE.flagLapsRemaining = 1;
+  if(RACE.redFlagActive) return;
+  RACE.redFlagActive = true;
+  RACE.redFlagModalPending = true;
   pushFeed(RACE.lap, `RED FLAG — session stopped.`, 'danger');
   flashBanner('Red Flag','red');
-  setTimeout(()=>{
-    if(!RACE || RACE.finished) return;
-    setFlag('sc');
-    RACE.flagLapsRemaining = 2;
-    pushFeed(RACE.lap, `Race resumes behind the Safety Car.`, 'good');
-  }, 1800);
+  setFlagUI();
+  // Pause and open resume modal
+  racePaused = true;
+  setSpeedButtons();
+  openRedFlagResumeModal();
 }
 
-function maybeRandomFlagEvent(track){
-  if(RACE.flag!=='green') return;
-  const streetFactor = /street|wall/i.test(track.character) ? 0.004 : 0.0012;
-  if(Math.random() < streetFactor){
-    if(Math.random()<0.3) startSafetyCar(); else startVSC();
-    pushFeed(RACE.lap, `Debris on track triggers a caution.`, 'flag');
-  }
+function openRedFlagResumeModal(){
+  const myDrivers = myTeam().drivers;
+  openModal(`
+    <h2 style="color:var(--red)">🔴 Red Flag</h2>
+    <p>Race stopped. Choose tyres for the restart. Race resumes behind the Safety Car.</p>
+    ${myDrivers.map((d,i)=>`
+      <div class="driver-strat" data-abbr="${d.abbr}">
+        <div class="driver-strat-name">${d.name} <span class="dim" style="font-size:11px">(${d.abbr})</span></div>
+        <div class="tyre-select">
+          ${['S','M','H','I','W'].map(c=>`
+            <button class="tyre-btn rf-tyre" data-abbr="${d.abbr}" data-tyre="${c}">
+              <span class="tyre-dot ${c}"></span>${COMPOUNDS[c].name}
+            </button>
+          `).join('')}
+        </div>
+        <div style="font-size:11px;color:var(--dim);margin-top:6px" id="rfSel-${d.abbr}">Selected: M</div>
+      </div>
+    `).join('')}
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="btnRedFlagResume">Restart race</button>
+    </div>
+  `);
+  const sel = {};
+  myDrivers.forEach(d=> sel[d.abbr] = 'M');
+  document.querySelectorAll('.rf-tyre').forEach(b=>b.addEventListener('click', ()=>{
+    sel[b.dataset.abbr] = b.dataset.tyre;
+    document.getElementById('rfSel-'+b.dataset.abbr).textContent = 'Selected: '+b.dataset.tyre;
+  }));
+  document.getElementById('btnRedFlagResume').addEventListener('click', ()=>{
+    // Apply tyres
+    RACE.drivers.forEach(d=>{
+      if(sel[d.abbr]){
+        d.tyre = sel[d.abbr];
+        d.tyreAge = 0;
+        d.pitStops++;
+        d.pitHistory.push({lap:RACE.lap, tyre:d.tyre, reason:'redflag'});
+      }
+    });
+    // Reset damage for all (fresh start)
+    RACE.drivers.forEach(d=>{ d.damage = Math.max(0, d.damage - 2); });
+    RACE.redFlagActive = false;
+    RACE.redFlagModalPending = false;
+    RACE.scLapsRemaining = 2;
+    RACE.sectors = ['green','green','green'];
+    racePaused = false;
+    setSpeedButtons();
+    closeModal();
+    pushFeed(RACE.lap, `Race restarts behind the Safety Car.`, 'good');
+    setFlagUI();
+  });
 }
 
-// ---- AI pit ----
+// ---- Pit stops ----
 function maybeAIPitStop(d, track, wet){
   if(d.teamId===STATE.myTeamId) return;
   if(RACE.lap < 3) return;
+  if(d._pitTimer > 0) return;
   const comp = COMPOUNDS[d.tyre];
   const wantsWet = wet>0.35 && !comp.wet;
   const wantsSlickBack = wet<0.12 && comp.wet;
   const tyreWorn = d.tyreAge > (comp.degRate>1.8 ? rand(14,20) : rand(22,32));
+  const duePlanned = d.nextPitLap && RACE.lap >= d.nextPitLap && d.pitStops < (d.pitPlan==='2-stop'?2:1);
   if((track.laps-RACE.lap) < 3) return;
-  if(wantsWet || wantsSlickBack || tyreWorn){
+  if(wantsWet || wantsSlickBack || tyreWorn || duePlanned){
     const newTyre = wantsWet ? (wet>0.6?'W':'I') : (wantsSlickBack ? pick(['M','H']) : pick(['M','H']));
-    doPitStop(d, newTyre);
+    beginPitStop(d, newTyre);
+    if(d.pitPlan==='2-stop' && d.pitStops===1) d.nextPitLap = RACE.lap + Math.round(track.laps*randf(0.25,0.4));
+    else d.nextPitLap = 99999;
   }
 }
 
-function doPitStop(d, newTyre){
+function beginPitStop(d, newTyre){
+  d._pitTimer = 2;
+  d._pendingTyre = newTyre;
   d.pitStops++;
-  d.tyre = newTyre;
-  d.tyreAge = 0;
-  d._justPitted = true;
   d.pitHistory.push({lap:RACE.lap, tyre:newTyre});
   d.totalTime += 21 + randf(-1.5,2.5);
-  pushFeed(RACE.lap, `<b>${d.abbr}</b> pits — fits ${COMPOUNDS[newTyre].name}.`, null);
+  pushFeed(RACE.lap, `<b>${d.abbr}</b> pits — fits ${COMPOUNDS[newTyre].name}.`, 'pit');
+  if(d.teamId===STATE.myTeamId) flashBanner('Box box box','blue');
 }
 
-// ---- Player strategy decisions ----
+// ---- Player decisions ----
 function maybeQueuePlayerDecision(active, track, wet){
   if(RACE.pendingDecision) return;
   if(RACE.lap < 3) return;
   const mine = active.filter(d=>d.teamId===STATE.myTeamId && !d.strategyPending);
   if(mine.length===0) return;
   if((track.laps-RACE.lap) < 3) return;
-
   for(const d of mine){
     const comp = COMPOUNDS[d.tyre];
     const wantsWetChange = (wet>0.3 && !comp.wet) || (wet<0.12 && comp.wet);
     const tyreCliff = d.tyreAge > (comp.degRate>1.8 ? rand(16,20) : rand(24,30));
-    const randomCall = Math.random() < 0.006;
-    if(wantsWetChange || tyreCliff || randomCall){
-      queueDecision(d, track, wet, wantsWetChange?'weather':(tyreCliff?'wear':'routine'));
+    const duePlanned = d.nextPitLap && RACE.lap >= d.nextPitLap && d.pitStops < (d.pitPlan==='2-stop'?2:1);
+    const randomCall = Math.random() < 0.005;
+    if(wantsWetChange || tyreCliff || duePlanned || randomCall){
+      queueDecision(d, track, wet, wantsWetChange?'weather':(tyreCliff?'wear':(duePlanned?'planned':'routine')));
       break;
     }
   }
@@ -1001,11 +1262,11 @@ function queueDecision(driver, track, wet, reason){
 }
 function renderDecisionBar(){
   const { driver, track, wet, reason } = RACE.pendingDecision;
-  const bar = document.getElementById('decisionBar');
-  bar.classList.add('active');
+  document.getElementById('decisionBar').classList.add('active');
   const reasonText = {
     weather: wet>0.3 ? 'Track wetting up — need a call on tyres.' : 'Track drying — consider slicks.',
     wear: `${COMPOUNDS[driver.tyre].name} tyres on lap ${driver.tyreAge} are dropping off.`,
+    planned: `Planned pit window for ${driver.abbr} is open.`,
     routine: `Strategy window open for ${driver.abbr}.`,
   };
   document.getElementById('decisionTitle').textContent = `${driver.abbr} — Pit Wall Call`;
@@ -1043,11 +1304,51 @@ function resolveDecision(driver, opt){
   RACE.pendingDecision = null;
   driver.strategyPending = false;
   document.getElementById('decisionBar').classList.remove('active');
-  if(opt.action==='pit') doPitStop(driver, opt.tyre);
+  if(opt.action==='pit') beginPitStop(driver, opt.tyre);
   else pushFeed(RACE.lap, `<b>${driver.abbr}</b> stays out on ${COMPOUNDS[driver.tyre].name}.`, null);
 }
 
-// ---- Render ----
+// ---- Radio ----
+function sendRadio(key){
+  const cmd = RADIO_COMMANDS.find(c=>c.key===key);
+  if(!cmd || !RACE) return;
+  const abbr = document.getElementById('radioDriver').value;
+  const driver = RACE.drivers.find(d=>d.abbr===abbr);
+  if(!driver || driver.retired) return;
+  // Apply effect
+  if(cmd.effect.boxNow){
+    if(driver._pitTimer===0){
+      const newTyre = pick(['M','H','S']);
+      beginPitStop(driver, newTyre);
+    }
+  } else {
+    driver.radioEffect = {
+      paceBonus: cmd.effect.paceBonus || 0,
+      degMult: cmd.effect.degMult || 1,
+      untilLap: RACE.lap + (cmd.effect.durationLaps || 3),
+    };
+    if(cmd.effect.teamOrder) driver.orders = cmd.effect.teamOrder;
+  }
+  pushMsg('you', 'You → '+driver.name, cmd.label);
+  // Driver reply comes a beat later
+  setTimeout(()=>{
+    pushMsg('driver', driver.name, cmd.reply);
+  }, 500);
+  beep('radio');
+}
+
+function pushMsg(kind, who, text){
+  const scroll = document.getElementById('msgScroll');
+  if(!scroll) return;
+  const div = document.createElement('div');
+  div.className = 'msg-bubble ' + (kind==='driver'?'driver':(kind==='you'?'you':''));
+  div.innerHTML = `<div class="msg-head">${who}</div>${text}`;
+  scroll.appendChild(div);
+  scroll.scrollTop = scroll.scrollHeight;
+  if(kind==='driver') document.getElementById('msgBadge').style.display='inline';
+}
+
+// ---- Rendering ----
 function pushFeed(lap, html, kind){
   RACE.feed.push({lap, html, kind});
   const scroll = document.getElementById('feedScroll');
@@ -1068,88 +1369,225 @@ function renderTower(){
     if(d.teamId===STATE.myTeamId) cls += ' me';
     if(d.retired) cls += ' retired';
     else if(d.damage>0) cls += ' damaged';
+    if(d.penaltyFlashUntilLap > RACE.lap) cls += ' penalty';
+    if(d.pitFlashUntilLap > RACE.lap) cls += ' pitted';
     row.className = cls;
+    const crown = (RACE.fastestLapHolder===d.abbr) ? ' <span class="crown">♛</span>' : '';
     const gapText = d.retired ? (d.retiredReason==='crash'?'DNF-CR':'DNF-MEC') :
       (d.position===1 ? 'LEADER' : '+'+d.interval.toFixed(1)+'s');
     row.innerHTML = `
       <span class="tt-pos">${d.position}</span>
-      <span class="tt-driver"><span class="tt-team-pill" style="background:${team.color}"></span><span class="tt-driver-abbr">${d.abbr}</span></span>
+      <span class="tt-driver"><span class="tt-team-pill" style="background:${team.color}"></span><span class="tt-driver-abbr">${d.abbr}</span>${crown}</span>
       <span class="tt-gap">${gapText}</span>
       <span class="tt-tyre tyre-${d.tyre}">${d.tyre}</span>
       <span class="tt-tyreage">${d.retired?'':d.tyreAge+'L'}</span>
       <span class="tt-pits">${d.pitStops}</span>
       <span></span>
     `;
+    row.addEventListener('click', ()=>openDriverDetail(d));
     body.appendChild(row);
   });
 }
 
+function openDriverDetail(d){
+  const team = teamById(d.teamId);
+  const comp = COMPOUNDS[d.tyre];
+  const tyreLifeLeft = Math.max(0, 100 - (d.tyreAge * comp.degRate * 3));
+  const tyreColor = tyreLifeLeft > 60 ? 'var(--green)' : tyreLifeLeft > 30 ? 'var(--amber)' : 'var(--red)';
+  const gapAhead = d.position>1 ? (()=>{
+    const ahead = RACE.drivers.find(x=>x.position === d.position-1);
+    return ahead && !ahead.retired ? (d.totalTime - ahead.totalTime) : 0;
+  })() : 0;
+  const behind = RACE.drivers.find(x=>x.position === d.position+1);
+  const gapBehind = behind && !behind.retired ? (behind.totalTime - d.totalTime) : 0;
+  const pitHistory = d.pitHistory.length ? d.pitHistory.map(p=>`L${p.lap} → ${p.tyre}`).join('<br>') : 'No stops yet';
+
+  openModal(`
+    <div class="driver-detail">
+      <div class="dd-header">
+        <div>
+          <div class="dd-name">${d.name}</div>
+          <div class="dd-team">${team.name} · ${d.abbr}</div>
+        </div>
+        <div class="dd-headset" id="ddHeadset" title="Radio this driver">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>
+        </div>
+      </div>
+
+      <div class="dd-grid">
+        <div class="dd-cell"><div class="l">Position</div><div class="v">P${d.position}</div></div>
+        <div class="dd-cell"><div class="l">Gap to leader</div><div class="v">${d.position===1?'—':'+'+d.gapToLeader.toFixed(1)+'s'}</div></div>
+        <div class="dd-cell"><div class="l">Ahead</div><div class="v">${d.position>1?'+'+gapAhead.toFixed(1)+'s':'—'}</div></div>
+        <div class="dd-cell"><div class="l">Behind</div><div class="v">${behind?'-'+gapBehind.toFixed(1)+'s':'—'}</div></div>
+        <div class="dd-cell"><div class="l">Tyre</div><div class="v">${comp.name} · ${d.tyreAge}L</div></div>
+        <div class="dd-cell"><div class="l">Fuel</div><div class="v">${Math.round(d.fuel)}%</div></div>
+        <div class="dd-cell"><div class="l">Damage</div><div class="v" style="color:${d.damage>0?'var(--amber)':'var(--text)'}">${d.damage}/5</div></div>
+        <div class="dd-cell"><div class="l">Pit stops</div><div class="v">${d.pitStops}</div></div>
+      </div>
+
+      <div>
+        <div style="font-size:11px;color:var(--dim);margin-bottom:4px">Tyre life remaining</div>
+        <div class="dd-bar"><div class="dd-bar-fill" style="width:${tyreLifeLeft}%;background:${tyreColor}"></div></div>
+        <div style="font-size:11.5px;color:var(--dim);margin-top:3px">${Math.round(tyreLifeLeft)}% left</div>
+      </div>
+
+      <div>
+        <div style="font-size:11px;color:var(--dim);margin-bottom:4px">Best sectors (current stint)</div>
+        <div class="dd-grid">
+          <div class="dd-cell"><div class="l">S1</div><div class="v">${d.bestSector[0]?d.bestSector[0].toFixed(2):'—'}</div></div>
+          <div class="dd-cell"><div class="l">S2</div><div class="v">${d.bestSector[1]?d.bestSector[1].toFixed(2):'—'}</div></div>
+          <div class="dd-cell"><div class="l">S3</div><div class="v">${d.bestSector[2]?d.bestSector[2].toFixed(2):'—'}</div></div>
+        </div>
+      </div>
+
+      <div>
+        <div style="font-size:11px;color:var(--dim);margin-bottom:4px">ERS mode</div>
+        <div class="tyre-select">
+          ${Object.entries(ERS_MODES).map(([k,v])=>`
+            <button class="tyre-btn ers-btn" data-abbr="${d.abbr}" data-mode="${k}" style="${d.ers===k?'border-color:var(--cyan)':''}">${v.label}</button>
+          `).join('')}
+        </div>
+      </div>
+
+      <div>
+        <div style="font-size:11px;color:var(--dim);margin-bottom:4px">Pit history</div>
+        <div style="font-size:11.5px;color:var(--dim);line-height:1.6">${pitHistory}</div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-ghost btn-sm" id="ddClose">Close</button>
+      </div>
+    </div>
+  `);
+
+  document.getElementById('ddClose').addEventListener('click', closeModal);
+  document.getElementById('ddHeadset').addEventListener('click', ()=>{
+    closeModal();
+    setRaceTab('messages');
+    document.getElementById('radioDriver').value = d.abbr;
+  });
+  document.querySelectorAll('.ers-btn').forEach(b=>b.addEventListener('click', ()=>{
+    const drv = RACE.drivers.find(x=>x.abbr===b.dataset.abbr);
+    if(drv) drv.ers = b.dataset.mode;
+    closeModal();
+  }));
+}
+
+// ---- Track view (sector-aware, distance-based positioning) ----
 function drawTrackView(){
   const canvas = document.getElementById('trackCanvas');
+  if(!canvas || !RACE) return;
   const ctx = canvas.getContext('2d');
   const w = canvas.width, h = canvas.height;
   ctx.clearRect(0,0,w,h);
-  const path = RACE.track.path;
-  const pad = 40;
-  const X = x => pad + x*(w-pad*2);
-  const Y = y => pad + y*(h-pad*2);
 
-  // Track ribbon
-  ctx.lineWidth = 22;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  ctx.strokeStyle = '#2A2F38';
-  ctx.beginPath();
-  path.forEach((p,i)=>{ i? ctx.lineTo(X(p[0]),Y(p[1])) : ctx.moveTo(X(p[0]),Y(p[1])); });
-  ctx.closePath();
-  ctx.stroke();
+  const cx = w/2, cy = h/2;
+  const rx = w * 0.42;
+  const ry = h * 0.40 * (RACE.track.shape || 0.6) + h * 0.10;
+  const tilt = RACE.track.tilt || 0;
+  const kink = RACE.track.kink || 0.05;
 
-  ctx.strokeStyle = '#12151A';
-  ctx.lineWidth = 2;
+  // Build the closed path (perimeter as array of points) — 3 sectors
+  const N = 180;
+  const pts = [];
+  for(let i=0;i<N;i++){
+    const t = (i/N) * Math.PI * 2;
+    // Basic ellipse with tilt + small kink so shape is not perfectly smooth
+    const kx = Math.sin(t*2) * kink * rx * 0.15;
+    const ky = Math.cos(t*3) * kink * ry * 0.15;
+    let x = Math.cos(t) * rx + kx;
+    let y = Math.sin(t) * ry + ky;
+    // Tilt
+    const xr = x * Math.cos(tilt) - y * Math.sin(tilt);
+    const yr = x * Math.sin(tilt) + y * Math.cos(tilt);
+    pts.push({ x: cx + xr, y: cy + yr });
+  }
+
+  // 3 sectors: [0, N/3), [N/3, 2N/3), [2N/3, N)
+  const sectorRanges = [[0, Math.floor(N/3)], [Math.floor(N/3), Math.floor(2*N/3)], [Math.floor(2*N/3), N]];
+  const sectorColors = { green:'#2f7a4a', yellow:'#c9922a', red:'#a13b34' };
+
+  // Draw each sector
+  sectorRanges.forEach((range, sIdx)=>{
+    const color = sectorColors[RACE.sectors[sIdx]] || sectorColors.green;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 16;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    for(let i=range[0]; i<=range[1]; i++){
+      const p = pts[i % N];
+      if(i===range[0]) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    }
+    ctx.stroke();
+  });
+
+  // Dashed center line
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 1;
   ctx.setLineDash([6,8]);
   ctx.beginPath();
-  path.forEach((p,i)=>{ i? ctx.lineTo(X(p[0]),Y(p[1])) : ctx.moveTo(X(p[0]),Y(p[1])); });
-  ctx.closePath();
+  for(let i=0;i<=N;i++){
+    const p = pts[i % N];
+    if(i===0) ctx.moveTo(p.x, p.y);
+    else ctx.lineTo(p.x, p.y);
+  }
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Build cumulative lengths for spline positioning
-  const pts = path.map(p=>({x:X(p[0]), y:Y(p[1])}));
-  const segs = [];
-  let total = 0;
-  for(let i=0;i<pts.length;i++){
-    const a = pts[i], b = pts[(i+1)%pts.length];
-    const len = Math.hypot(b.x-a.x, b.y-a.y);
-    segs.push({a,b,len,start:total});
-    total += len;
-  }
-  const posAt = (frac)=>{
-    let d = frac*total;
-    for(const s of segs){
-      if(d <= s.start+s.len){
-        const t = (d-s.start)/s.len;
-        return { x: s.a.x + (s.b.x-s.a.x)*t, y: s.a.y + (s.b.y-s.a.y)*t };
-      }
-    }
-    return {x:pts[0].x, y:pts[0].y};
+  // Start/finish marker at t=0
+  const sf = pts[0];
+  ctx.fillStyle = '#EDEAE2';
+  ctx.beginPath();
+  ctx.arc(sf.x, sf.y, 5, 0, Math.PI*2);
+  ctx.fill();
+  ctx.font = '10px JetBrains Mono, monospace';
+  ctx.fillText('S/F', sf.x+10, sf.y-6);
+
+  // Helper: get point at fraction f (0..1) along the closed path
+  const pointAt = (f)=>{
+    f = ((f % 1) + 1) % 1;
+    const idx = f * N;
+    const i0 = Math.floor(idx);
+    const i1 = (i0+1) % N;
+    const t = idx - i0;
+    const a = pts[i0], b = pts[i1];
+    return { x: a.x + (b.x-a.x)*t, y: a.y + (b.y-a.y)*t };
   };
 
-  const active = RACE.drivers.filter(d=>!d.retired);
-  const maxGap = Math.max(0.5, ...active.map(d=>d.gapToLeader));
-  active.forEach(d=>{
+  // Cars by distance fraction
+  const totalDistance = RACE.laps; // each driver's distanceCovered is in laps
+  RACE.drivers.forEach(d=>{
+    if(d.retired) return;
+    const frac = d.distanceCovered / totalDistance;
+    const pt = pointAt(frac);
     const team = teamById(d.teamId);
-    const frac = maxGap>0 ? (d.gapToLeader/maxGap)*0.9 : 0;
-    const pt = posAt(clamp(frac,0,0.98));
     ctx.beginPath();
     ctx.arc(pt.x, pt.y, d.teamId===STATE.myTeamId?7:5, 0, Math.PI*2);
     ctx.fillStyle = team.color;
     ctx.fill();
     if(d.teamId===STATE.myTeamId){ ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; ctx.stroke(); }
+    // Tyre ring
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, d.teamId===STATE.myTeamId?10:8, 0, Math.PI*2);
+    ctx.strokeStyle = { S:'#ef4444', M:'#fbbf24', H:'#e5e7eb', I:'#22c55e', W:'#3b82f6' }[d.tyre];
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+    // Label
     ctx.fillStyle = '#EDEAE2';
     ctx.font = '10px JetBrains Mono, monospace';
-    ctx.fillText(d.abbr, pt.x+9, pt.y+3);
+    ctx.fillText(d.abbr, pt.x+11, pt.y+3);
+    // Pit indicator
+    if(d._pitTimer > 0){
+      ctx.fillStyle = '#60a5fa';
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y-13, 4, 0, Math.PI*2);
+      ctx.fill();
+    }
   });
 
+  // Header
   ctx.fillStyle = '#565D6A';
   ctx.font = '11px JetBrains Mono, monospace';
   ctx.fillText(`${RACE.track.name} — Lap ${RACE.lap}/${RACE.laps}`, 14, 22);
@@ -1158,7 +1596,9 @@ function drawTrackView(){
 // ---- Finish ----
 function finishRace(){
   RACE.finished = true;
-  setFlag('checkered');
+  const el = document.getElementById('flagIndicator');
+  el.className = 'flag-indicator flag-checkered';
+  el.textContent = 'Finished';
   pushFeed(RACE.lap, `Checkered flag.`, 'good');
 }
 
@@ -1167,7 +1607,6 @@ function showRaceResults(){
   const dnfs = RACE.drivers.filter(d=>d.retired);
   const results = [...classified, ...dnfs];
 
-  // Points & prize
   let myPrize = 0;
   const myResults = [];
   results.forEach((d,i)=>{
@@ -1176,11 +1615,19 @@ function showRaceResults(){
     STATE.constructorsPoints[d.teamId] = (STATE.constructorsPoints[d.teamId]||0) + pts;
     if(d.teamId===STATE.myTeamId){
       myPrize += PRIZE_BY_POS[i] || PRIZE_BY_POS[PRIZE_BY_POS.length-1];
-      myResults.push({abbr:d.abbr, pos:i+1, retired:d.retired});
+      myResults.push({abbr:d.abbr, name:d.name, pos:i+1, retired:d.retired});
     }
   });
 
-  // Save log
+  // Fastest lap point
+  if(RACE.fastestLapHolder){
+    const fl = RACE.drivers.find(d=>d.abbr===RACE.fastestLapHolder);
+    if(fl && !fl.retired && fl.position <= 10){
+      STATE.driversPoints[fl.abbr] = (STATE.driversPoints[fl.abbr]||0) + 1;
+      STATE.constructorsPoints[fl.teamId] = (STATE.constructorsPoints[fl.teamId]||0) + 1;
+    }
+  }
+
   STATE.raceLog.push({
     season: STATE.season,
     round: STATE.round+1,
@@ -1188,7 +1635,7 @@ function showRaceResults(){
     results: results.map((d,i)=>({abbr:d.abbr, pos:i+1, retired:d.retired})),
   });
 
-  // Board confidence update
+  // Board confidence
   const bestPos = myResults.filter(r=>!r.retired).sort((a,b)=>a.pos-b.pos)[0]?.pos || 20;
   const expected = { title:3, contender:6, midfield:9, backmarker:12 }[myTeam().tier];
   const delta = clamp((expected - bestPos) * 1.2, -12, 14);
@@ -1196,13 +1643,10 @@ function showRaceResults(){
   STATE.budget += myPrize;
 
   STATE.round++;
+  applyPendingUpgrades();
   saveToSlot(activeSlot);
 
-  // Fired check
-  if(STATE.boardConf <= 5 && STATE.round < TRACKS.length){
-    renderFiredModal();
-    return;
-  }
+  if(STATE.boardConf <= 5 && STATE.round < TRACKS.length){ renderFiredModal(); return; }
 
   renderResultsModal(results, myResults, myPrize, delta);
 }
@@ -1212,19 +1656,30 @@ function renderResultsModal(results, myResults, myPrize, delta){
     const t = teamById(d.teamId);
     const statusText = d.retired ? (d.retiredReason==='crash'?'DNF (crash)':'DNF (mec)') : `P${i+1}`;
     const pts = i<POINTS_TABLE.length && !d.retired ? POINTS_TABLE[i] : 0;
+    const crown = (RACE.fastestLapHolder===d.abbr) ? ' ♛' : '';
     return `<div class="side-row" style="border-bottom:1px solid var(--line);padding:7px 0;">
-      <span><span class="team-pill" style="background:${t.color}"></span>${d.abbr} ${t.id===STATE.myTeamId?'←':''}</span>
+      <span><span class="team-pill" style="background:${t.color}"></span>${d.abbr}${crown} ${t.id===STATE.myTeamId?'←':''}</span>
       <b>${statusText}${pts?` (+${pts})`:''}</b>
     </div>`;
   }).join('');
   const deltaText = delta>0 ? `+${delta.toFixed(1)}` : delta.toFixed(1);
   const deltaColor = delta>0?'var(--green)':delta<0?'var(--red)':'var(--dim)';
+
+  // Highlights
+  const biggestMover = RACE.drivers.filter(d=>!d.retired).slice().sort((a,b)=>(a.startPosition-a.position)-(b.startPosition-b.position)).pop();
+  const yourBest = myResults.filter(r=>!r.retired).sort((a,b)=>a.pos-b.pos)[0];
+
   openModal(`
     <h2>Race Result — ${RACE.track.name}</h2>
     <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px">
       <span class="team-stat-mini">PRIZE <b style="color:var(--amber)">$${myPrize.toFixed(1)}M</b></span>
       <span class="team-stat-mini">BOARD <b style="color:${deltaColor}">${deltaText}%</b></span>
       <span class="team-stat-mini">CONFIDENCE <b>${Math.round(STATE.boardConf)}%</b></span>
+    </div>
+    <div style="background:var(--panel2);padding:10px;border-radius:3px;margin-bottom:12px;font-size:12px;line-height:1.7">
+      <div><b>Fastest lap:</b> ${RACE.fastestLapHolder || '—'}</div>
+      <div><b>Biggest mover:</b> ${biggestMover ? biggestMover.abbr + ' (' + (biggestMover.startPosition - biggestMover.position) + ' places)' : '—'}</div>
+      <div><b>Your best:</b> ${yourBest ? yourBest.name + ' (P' + yourBest.pos + ')' : 'No finishers'}</div>
     </div>
     <div style="max-height:340px;overflow-y:auto;margin:8px 0">${rows}</div>
     <div class="modal-actions"><button class="btn btn-primary btn-sm" id="btnBackToHub">Back to pit wall</button></div>
@@ -1255,10 +1710,6 @@ function renderFiredModal(){
 
 // ===================== BOOT =====================
 (function boot(){
-  if(hasAnySave()){
-    document.getElementById('btnLoadGame').disabled = false;
-  } else {
-    document.getElementById('btnLoadGame').disabled = true;
-  }
+  document.getElementById('btnLoadGame').disabled = !hasAnySave();
   showScreen('screen-intro');
 })();
