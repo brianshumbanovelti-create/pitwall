@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>PIT WALL — Team Principal</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+  :root{
+    --bg:#0B0D10; --bg2:#12151A; --panel:#171B21; --panel2:#1D222A;
+    --line:#2A2F38; --text:#EDEAE2; --dim:#8B92A0; --dimmer:#565D6A;
+    --cyan:#4FD1D9; --cyan-dim:#2A5F63; --amber:#E8A93A; --red:#C4453D;
+    --green:#5FB878; --purple:#9B7ED9;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{background:var(--bg); color:var(--text); font-family:'Titillium Web', sans-serif;
+    overflow:hidden; -webkit-font-smoothing:antialiased;}
+  .mono{font-family:'JetBrains Mono', monospace;}
+  ::selection{background:var(--cyan-dim); color:#fff;}
+  ::-webkit-scrollbar{width:8px; height:8px;}
+  ::-webkit-scrollbar-track{background:var(--bg2);}
+  ::-webkit-scrollbar-thumb{background:var(--line); border-radius:4px;}
+  button{font-family:inherit; cursor:pointer; border:none; background:none; color:inherit;}
+  button:focus-visible, [tabindex]:focus-visible, select:focus-visible{outline:2px solid var(--cyan); outline-offset:2px;}
+  select{background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    padding:7px 10px; border-radius:2px; font-family:inherit; font-size:12px; width:100%;}
+
+  #app{height:100dvh; width:100vw; position:relative; overflow:hidden;}
+  .screen{height:100%; width:100%; display:none; overflow:hidden;}
+  .screen.active{display:flex; flex-direction:column; min-height:0;}
+
+  .topbar{height:auto; min-height:52px; display:flex; align-items:center;
+    padding:8px 20px; border-bottom:1px solid var(--line); background:var(--bg2);
+    gap:16px; flex-wrap:wrap; flex-shrink:0;}
+  .brand{font-weight:900; font-size:15px; letter-spacing:0.5px; display:flex; align-items:center; gap:8px;}
+  .brand .dot{width:8px; height:8px; border-radius:50%; background:var(--cyan); box-shadow:0 0 8px var(--cyan);}
+  .topbar-spacer{flex:1;}
+  .topbar-stat{font-size:13px; color:var(--dim);}
+  .topbar-stat b{color:var(--text); font-weight:600;}
+
+  #screen-intro{align-items:center; justify-content:center;
+    background:radial-gradient(ellipse 1200px 600px at 50% -10%, rgba(79,209,217,0.08), transparent), var(--bg);
+    overflow-y:auto;}
+  .intro-wrap{max-width:640px; padding:40px 24px; text-align:center; width:100%;}
+  .intro-title{font-size:44px; font-weight:900; letter-spacing:1px; line-height:1.05; margin-bottom:10px;}
+  .intro-title span{color:var(--cyan);}
+  .intro-sub{color:var(--dim); font-size:15px; margin-bottom:28px; line-height:1.6;}
+  .intro-menu{display:flex; flex-direction:column; gap:10px; max-width:280px; margin:0 auto;}
+
+  #screen-teamselect{padding:0;}
+  .ts-header{padding:20px 24px 14px; border-bottom:1px solid var(--line); flex-shrink:0;}
+  .ts-header h1{font-size:20px; font-weight:700; margin-bottom:4px;}
+  .ts-header p{color:var(--dim); font-size:13px;}
+  .ts-grid{flex:1; min-height:0; overflow-y:auto; display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(240px, 1fr));
+    gap:1px; background:var(--line); padding:1px; align-content:start;}
+  .team-card{background:var(--panel); padding:16px; cursor:pointer;
+    transition:background 0.15s ease; display:flex; flex-direction:column; gap:8px;
+    border-left:3px solid transparent;}
+  .team-card:hover{background:var(--panel2);}
+  .team-card.selected{border-left-color:var(--cyan); background:var(--panel2);}
+  .team-card-top{display:flex; align-items:center; justify-content:space-between;}
+  .team-abbr{font-family:'JetBrains Mono', monospace; font-weight:700; font-size:18px; letter-spacing:1px;}
+  .team-tier{font-size:9px; letter-spacing:0.5px; padding:3px 7px; border-radius:2px;
+    text-transform:uppercase; font-weight:700;}
+  .tier-title{background:rgba(232,169,58,0.15); color:var(--amber);}
+  .tier-contender{background:rgba(95,184,120,0.15); color:var(--green);}
+  .tier-midfield{background:rgba(79,209,217,0.15); color:var(--cyan);}
+  .tier-backmarker{background:rgba(139,146,160,0.15); color:var(--dim);}
+  .team-name{font-size:12.5px; color:var(--dim);}
+  .team-drivers{font-size:11.5px; color:var(--dimmer);}
+  .team-drivers b{color:var(--text); font-weight:600;}
+  .team-stats{display:flex; gap:12px; flex-wrap:wrap;}
+  .team-stat-mini{font-size:10.5px; color:var(--dimmer);}
+  .team-stat-mini b{color:var(--dim); font-family:'JetBrains Mono', monospace;}
+  .ts-footer{padding:12px 20px calc(12px + env(safe-area-inset-bottom)); border-top:1px solid var(--line);
+    display:flex; justify-content:flex-end; gap:10px; background:var(--bg2); flex-shrink:0;
+    position:sticky; bottom:0;}
+
+  .btn{padding:10px 22px; font-size:13.5px; font-weight:600; border-radius:2px;
+    letter-spacing:0.2px; transition:opacity 0.15s ease, transform 0.1s ease;
+    display:inline-flex; align-items:center; justify-content:center; gap:8px;}
+  .btn:active{transform:scale(0.98);}
+  .btn:disabled{opacity:0.35; cursor:not-allowed;}
+  .btn-primary{background:var(--cyan); color:#0B0D10;}
+  .btn-primary:not(:disabled):hover{opacity:0.9;}
+  .btn-ghost{background:var(--panel2); color:var(--text); border:1px solid var(--line);}
+  .btn-ghost:hover{background:var(--line);}
+  .btn-danger{background:var(--red); color:#fff;}
+  .btn-sm{padding:7px 13px; font-size:12px;}
+
+  .hub-body{flex:1; display:flex; overflow:hidden; min-height:0;}
+  .hub-side{width:260px; min-width:260px; border-right:1px solid var(--line);
+    background:var(--bg2); overflow-y:auto; padding:18px;}
+  .hub-main{flex:1; overflow-y:auto; padding:24px 28px; min-width:0;}
+  .side-block{margin-bottom:22px;}
+  .side-label{font-size:10.5px; letter-spacing:0.8px; color:var(--dimmer); font-weight:700;
+    margin-bottom:8px; text-transform:uppercase;}
+  .side-row{display:flex; justify-content:space-between; font-size:12.5px; padding:5px 0; color:var(--dim);}
+  .side-row b{color:var(--text); font-family:'JetBrains Mono', monospace; font-weight:500;}
+  .obj-item{padding:10px 12px; background:var(--panel); border-radius:3px; margin-bottom:8px;
+    border-left:3px solid var(--dimmer); font-size:12px;}
+  .obj-item.met{border-left-color:var(--green);}
+  .obj-item.at-risk{border-left-color:var(--amber);}
+  .obj-item.failed{border-left-color:var(--red);}
+  .obj-item .obj-title{font-weight:600; color:var(--text); margin-bottom:2px;}
+  .obj-item .obj-status{color:var(--dim); font-size:11px;}
+
+  .conf-bar{height:6px; background:var(--bg2); border-radius:3px; overflow:hidden; margin-top:8px;}
+  .conf-fill{height:100%; transition:width 0.4s ease;}
+
+  .season-btn{
+    padding:5px 12px;
+    background:var(--panel2); border:1px solid var(--line); border-radius:3px;
+    font-size:12.5px; color:var(--text); font-weight:600;
+    display:inline-flex; align-items:center; gap:6px;
+    cursor:pointer; transition:all 0.15s ease;
+  }
+  .season-btn:hover{background:var(--panel); border-color:var(--cyan-dim);}
+  .season-btn .caret{font-size:9px; color:var(--dim);}
+
+  .hub-section{margin-bottom:22px;}
+  .hub-section-title{font-size:15px; font-weight:700; margin-bottom:3px;}
+  .hub-section-sub{font-size:12px; color:var(--dim); margin-bottom:12px;}
+
+  .next-race-card{background:linear-gradient(135deg, rgba(79,209,217,0.08), var(--panel));
+    border:1px solid var(--cyan-dim); border-radius:4px; padding:10px 14px;
+    display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap;}
+  .nrc-left{display:flex; flex-direction:column; gap:2px; min-width:0; flex:1;}
+  .nrc-line-1{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+  .nrc-round{font-size:10px; color:var(--cyan); letter-spacing:0.5px; font-weight:700;}
+  .nrc-name{font-size:15px; font-weight:700;}
+  .nrc-meta{font-size:11.5px; color:var(--dim); display:flex; gap:10px; flex-wrap:wrap;}
+
+  .standings-toggle{
+    display:inline-flex; gap:1px; background:var(--line); border-radius:3px; overflow:hidden;
+    margin-bottom:10px;
+  }
+  .standings-toggle button{
+    padding:6px 14px; font-size:11.5px; font-weight:600;
+    background:var(--panel2); color:var(--dim);
+    transition:all 0.12s ease;
+  }
+  .standings-toggle button.active{background:var(--cyan); color:#0B0D10;}
+
+  .standings-table{width:100%; border-collapse:collapse; font-size:12.5px;}
+  .standings-table th{text-align:left; font-size:10.5px; color:var(--dimmer); font-weight:700;
+    letter-spacing:0.4px; padding:7px 9px; border-bottom:1px solid var(--line); text-transform:uppercase;}
+  .standings-table td{padding:8px 9px; border-bottom:1px solid rgba(42,47,56,0.5);}
+  .standings-table tr.me{background:rgba(79,209,217,0.06);}
+  .standings-table tr.clickable{cursor:pointer;}
+  .standings-table tr.clickable:hover{background:var(--panel2);}
+  .standings-table .pos{color:var(--dimmer); font-family:'JetBrains Mono', monospace; width:28px;}
+  .standings-table .pts{font-family:'JetBrains Mono', monospace; text-align:right; color:var(--text); font-weight:600;}
+  .team-pill{display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:7px;}
+
+  .roster-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(200px,1fr)); gap:10px;}
+  .eng-card{background:var(--panel); border-radius:3px; padding:12px 14px; border:1px solid var(--line);}
+  .eng-name{font-weight:600; font-size:13.5px;}
+  .eng-role{font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:0.4px; margin-bottom:8px;}
+  .eng-bars{display:flex; flex-direction:column; gap:4px;}
+  .eng-bar-row{display:flex; align-items:center; gap:8px; font-size:10.5px; color:var(--dimmer);}
+  .eng-bar-track{flex:1; height:4px; background:var(--bg2); border-radius:2px; overflow:hidden;}
+  .eng-bar-fill{height:100%; background:var(--cyan); border-radius:2px;}
+
+  .candidate-card{background:var(--panel); border-radius:3px; padding:14px;
+    border:1px solid var(--line); margin-bottom:9px;
+    display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap;}
+  .candidate-info{flex:1; min-width:180px;}
+  .candidate-name{font-weight:700; font-size:14px; margin-bottom:2px;}
+  .candidate-role{font-size:11px; color:var(--cyan); text-transform:uppercase; letter-spacing:0.3px; margin-bottom:7px;}
+  .candidate-stats{display:flex; gap:12px; flex-wrap:wrap;}
+  .candidate-cost{font-family:'JetBrains Mono', monospace; font-size:12.5px; color:var(--amber); font-weight:600;}
+
+  .season-history{
+    position:fixed; inset:0; background:var(--bg); z-index:90;
+    display:none; flex-direction:column;
+  }
+  .season-history.active{display:flex;}
+  .sh-header{padding:14px 20px; border-bottom:1px solid var(--line); background:var(--bg2);
+    display:flex; align-items:center; gap:12px; flex-shrink:0; flex-wrap:wrap;}
+  .sh-tabs{display:flex; gap:6px; flex-wrap:wrap;}
+  .sh-tab{
+    padding:6px 14px; border-radius:3px; font-size:12.5px; font-weight:600;
+    background:var(--panel2); color:var(--dim); border:1px solid var(--line);
+    cursor:pointer; transition:all 0.15s ease;
+  }
+  .sh-tab:hover{color:var(--text);}
+  .sh-tab.active{background:var(--cyan); color:#0B0D10; border-color:var(--cyan);}
+  .sh-body{flex:1; overflow-y:auto; padding:20px;}
+  .sh-race{
+    background:var(--panel); border:1px solid var(--line); border-radius:3px;
+    padding:12px 14px; margin-bottom:8px;
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+    transition:all 0.15s ease;
+  }
+  .sh-race.clickable{cursor:pointer;}
+  .sh-race.clickable:hover{background:var(--panel2); border-color:var(--cyan-dim);}
+  .sh-race.pending{opacity:0.4; cursor:default;}
+  .sh-race-round{font-size:11px; color:var(--cyan); font-family:'JetBrains Mono', monospace;
+    font-weight:700; min-width:36px;}
+  .sh-race-name{font-weight:700; font-size:14px; flex:1; min-width:140px;}
+  .sh-race-meta{font-size:12px; color:var(--dim); display:flex; gap:14px; flex-wrap:wrap;}
+  .sh-race-meta b{color:var(--text); font-weight:600;}
+
+  .race-detail-classification{display:flex; flex-direction:column; gap:6px; margin-top:8px;}
+  .rd-row{
+    display:grid; grid-template-columns:34px 1fr auto auto;
+    gap:12px; align-items:center;
+    padding:8px 10px; background:var(--panel2); border-radius:3px;
+    font-size:12.5px;
+  }
+  .rd-row.me{background:rgba(79,209,217,0.08);}
+  .rd-row.dnf{opacity:0.6;}
+  .rd-row .rd-pos{font-family:'JetBrains Mono', monospace; color:var(--dimmer); font-weight:700; text-align:right;}
+  .rd-row .rd-name{font-weight:600;}
+  .rd-row .rd-team{color:var(--dim); font-size:11.5px;}
+  .rd-row .rd-rating{
+    font-family:'JetBrains Mono', monospace; font-weight:700;
+    padding:3px 8px; border-radius:3px; font-size:11.5px; min-width:36px; text-align:center;
+  }
+  .rating-high{background:rgba(95,184,120,0.18); color:var(--green);}
+  .rating-mid{background:rgba(232,169,58,0.18); color:var(--amber);}
+  .rating-low{background:rgba(196,69,61,0.18); color:var(--red);}
+
+  .driver-profile{display:flex; flex-direction:column; gap:14px;}
+  .dp-header{border-bottom:1px solid var(--line); padding-bottom:12px;}
+  .dp-name{font-size:20px; font-weight:700;}
+  .dp-sub{font-size:12.5px; color:var(--dim); margin-top:4px;}
+  .dp-stats{display:grid; grid-template-columns:repeat(4, 1fr); gap:8px;}
+  .dp-stat{background:var(--panel2); padding:10px; border-radius:3px; text-align:center;}
+  .dp-stat .v{font-size:18px; font-weight:700; font-family:'JetBrains Mono', monospace;}
+  .dp-stat .l{font-size:10px; color:var(--dimmer); text-transform:uppercase; letter-spacing:0.4px; margin-top:2px;}
+  .dp-rating-big{
+    background:var(--panel2); padding:14px; border-radius:3px;
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  .dp-rating-big .v{font-size:28px; font-weight:700; font-family:'JetBrains Mono', monospace;}
+  .dp-rating-big .l{font-size:11.5px; color:var(--dim); text-transform:uppercase; letter-spacing:0.4px;}
+  .dp-form{display:flex; gap:6px; margin-top:6px;}
+
+  #screen-weekend{padding:0;}
+  .wk-header{padding:16px 22px; border-bottom:1px solid var(--line); flex-shrink:0;
+    display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap;}
+  .wk-round{font-size:11px; color:var(--cyan); letter-spacing:0.5px; font-weight:700;}
+  .wk-track{font-size:20px; font-weight:700;}
+  .wk-meta{font-size:12px; color:var(--dim); margin-top:4px;}
+  .wk-body{flex:1; overflow-y:auto; padding:22px; min-height:0;}
+  .wk-step{margin-bottom:22px; border:1px solid var(--line); border-radius:4px;
+    background:var(--panel); overflow:hidden;}
+  .wk-step-header{padding:12px 16px; background:var(--bg2); display:flex; justify-content:space-between;
+    align-items:center; border-bottom:1px solid var(--line); font-weight:700; font-size:13.5px;}
+  .wk-step-header .step-num{color:var(--cyan); font-family:'JetBrains Mono', monospace; margin-right:8px;}
+  .wk-step-body{padding:16px;}
+  .wk-step.done{opacity:0.6;}
+  .wk-step.locked{opacity:0.4; pointer-events:none;}
+  .wk-log{font-family:'JetBrains Mono', monospace; font-size:11px; color:var(--dim);
+    background:var(--bg2); padding:10px; border-radius:3px; max-height:200px; overflow-y:auto;
+    line-height:1.6;}
+  .wk-log .good{color:var(--green);} .wk-log .bad{color:var(--red);} .wk-log .warn{color:var(--amber);}
+  .wk-log .purple{color:var(--purple);}
+
+  /* RACE SCREEN */
+  #screen-race{background:var(--bg); flex-direction:column;}
+  .race-header{background:var(--bg2); border-bottom:1px solid var(--line); flex-shrink:0;}
+  .race-row{padding:8px 14px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; border-bottom:1px solid var(--line);}
+  .race-row:last-child{border-bottom:none;}
+  .race-track-name{font-weight:700; font-size:13.5px;}
+  .race-track-char{font-size:11px; color:var(--dim);}
+  .lap-counter{font-family:'JetBrains Mono', monospace; font-size:13px;}
+  .lap-counter b{color:var(--cyan);}
+  .speed-strip{display:flex; align-items:center; gap:6px; margin-left:auto;}
+  .speed-icon-btn{
+    min-width:42px; height:34px; padding:0 10px;
+    display:inline-flex; align-items:center; justify-content:center;
+    background:var(--panel2); color:var(--dim); border:1px solid var(--line); border-radius:3px;
+    font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700;
+    transition:all 0.12s ease;
+  }
+  .speed-icon-btn:hover{background:var(--panel); color:var(--text);}
+  .speed-icon-btn.active{background:var(--cyan); color:#0B0D10; border-color:var(--cyan);}
+  .speed-icon-btn svg{width:14px; height:14px;}
+
+  .flag-indicator{font-size:10.5px; font-weight:700; letter-spacing:0.5px; padding:4px 9px;
+    border-radius:2px; text-transform:uppercase;}
+  .flag-green{background:rgba(95,184,120,0.18); color:var(--green);}
+  .flag-yellow{background:rgba(232,169,58,0.18); color:var(--amber);}
+  .flag-vsc{background:rgba(232,169,58,0.28); color:var(--amber); animation:pulse 1.2s infinite;}
+  .flag-sc{background:rgba(232,169,58,0.35); color:var(--amber); animation:pulse 1.2s infinite;}
+  .flag-red{background:rgba(196,69,61,0.3); color:var(--red); animation:pulse 0.9s infinite;}
+  .flag-checkered{background:var(--panel2); color:var(--text);}
+  @keyframes pulse{0%,100%{opacity:1;} 50%{opacity:0.55;}}
+
+  .msg-ribbon{
+    display:flex; align-items:center; gap:10px;
+    padding:8px 14px; min-height:36px; flex-shrink:0;
+    cursor:pointer; transition:background 0.15s ease;
+    font-size:12px; overflow:hidden;
+    border-bottom:1px solid var(--line);
+  }
+  .msg-ribbon:hover{background:var(--panel);}
+  .msg-ribbon.flash{animation:ribbonFlash 0.9s ease;}
+  @keyframes ribbonFlash{0%{background:rgba(79,209,217,0.18);} 100%{background:transparent;}}
+  .msg-ribbon .ribbon-text{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .msg-ribbon .ribbon-pips{display:flex; gap:8px; flex-shrink:0; align-items:center;}
+  .msg-ribbon .pip{font-size:13px;}
+  .ribbon-strat{color:var(--text); font-weight:600;}
+  .ribbon-rc{color:var(--red); font-weight:700;}
+  .ribbon-wu{color:#67e8f9; font-weight:700;}
+  .ribbon-pit{color:#60a5fa; font-weight:700;}
+  .ribbon-cmd{color:var(--green); font-weight:700;}
+  .ribbon-driver{color:var(--purple); font-weight:700;}
+
+  .race-tabs{display:flex; gap:1px; background:var(--line); flex-shrink:0;}
+  .race-tab{padding:8px 16px; font-size:12px; background:var(--panel2); color:var(--dim); font-weight:600;
+    display:flex; align-items:center; gap:6px; flex:1; justify-content:center;}
+  .race-tab.active{background:var(--panel); color:var(--cyan);}
+
+  .race-view{flex:1; overflow:hidden; display:flex; flex-direction:column; min-height:0;}
+
+  .timing-tower{width:100%; overflow-y:auto; flex:1; min-height:0;}
+  .tt-header{
+    display:grid;
+    grid-template-columns: 30px 60px 1fr 60px 60px 80px;
+    gap:6px; padding:7px 14px; font-size:9.5px; color:var(--dimmer); font-weight:700;
+    letter-spacing:0.4px; text-transform:uppercase; border-bottom:1px solid var(--line);
+    position:sticky; top:0; background:var(--bg); z-index:2;}
+  .tt-row{
+    display:grid;
+    grid-template-columns: 30px 60px 1fr 60px 60px 80px;
+    gap:6px; padding:9px 14px; align-items:center; font-size:12px;
+    border-bottom:1px solid rgba(42,47,56,0.4); cursor:pointer;}
+  .tt-row.me{background:rgba(79,209,217,0.07);}
+  .tt-row.retired{opacity:0.35;}
+  .tt-row:hover{background:var(--panel2);}
+  .tt-pos{font-family:'JetBrains Mono', monospace; color:var(--dimmer); font-weight:600;}
+  .tt-driver{display:flex; align-items:center; gap:6px;}
+  .tt-team-pill{width:4px; height:18px; border-radius:1px; display:inline-block;}
+  .tt-driver-abbr{font-family:'JetBrains Mono', monospace; font-weight:700; font-size:11.5px;}
+  .tt-gap{font-family:'JetBrains Mono', monospace; color:var(--dim); font-size:11.5px;}
+  .tt-tyre{font-family:'JetBrains Mono', monospace; font-size:10.5px; font-weight:700;
+    width:20px; height:20px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    border:1.5px solid;}
+  .tyre-S{color:var(--red); border-color:var(--red);}
+  .tyre-M{color:var(--amber); border-color:var(--amber);}
+  .tyre-H{color:var(--text); border-color:var(--dim);}
+  .tyre-I{color:var(--green); border-color:var(--green);}
+  .tyre-W{color:var(--cyan); border-color:var(--cyan);}
+  .tt-life{font-family:'JetBrains Mono', monospace; font-size:10.5px; color:var(--dim);}
+  .crown{color:var(--purple); font-size:11px;}
+
+  .track-view{flex:1; min-height:0; position:relative; display:flex; align-items:center; justify-content:center;}
+  #trackCanvas{width:100%; height:100%; display:block;}
+  .sector-legend{position:absolute; top:8px; right:8px; background:rgba(15,19,28,0.85);
+    border:1px solid var(--line); border-radius:3px; padding:6px 8px; font-size:10px;
+    font-family:'JetBrains Mono', monospace; display:flex; flex-direction:column; gap:4px; z-index:3;}
+  .sector-legend .row{display:flex; align-items:center; gap:6px;}
+  .sector-legend .dot{width:8px; height:8px; border-radius:50%;}
+  .sector-legend .dot.green{background:var(--green);}
+  .sector-legend .dot.yellow{background:var(--amber);}
+  .sector-legend .dot.red{background:var(--red);}
+
+  .pitbox{
+    padding:8px 14px;
+    background:var(--bg2);
+    border-top:1px solid var(--line);
+    display:flex; align-items:center; gap:10px;
+    flex-shrink:0; min-height:52px;
+    font-family:'JetBrains Mono', monospace;
+    font-size:10px;
+  }
+  .pitbox .label{color:var(--dimmer); font-weight:700; letter-spacing:0.5px; flex-shrink:0;}
+  .pitbox .slot{display:flex; flex-direction:column; align-items:center; gap:4px; min-width:48px;}
+  .pitbox .cell{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:28px; height:28px; border-radius:50%;
+    font-size:11px; font-weight:700; color:#0B0D10;
+    border:2px solid var(--cyan);
+  }
+  .pitbox .bar{width:40px; height:3px; background:rgba(255,255,255,0.1); border-radius:2px; overflow:hidden;}
+  .pitbox .bar > div{height:100%; background:var(--cyan); border-radius:2px; transition:width 0.1s;}
+  .pitbox .empty{color:var(--dimmer); font-size:11px; font-style:italic;}
+
+  .mystrip{
+    display:flex; flex-direction:column;
+    background:var(--bg);
+    border-top:1px solid var(--line);
+    flex-shrink:0;
+  }
+  .myrow{
+    display:grid;
+    grid-template-columns: 30px 34px 60px 1fr 40px 60px;
+    align-items:center; gap:10px;
+    padding:12px 14px;
+    font-family:'JetBrains Mono', monospace;
+    border-bottom:1px solid var(--line);
+  }
+  .myrow:last-child{border-bottom:none;}
+  .myrow .pos{color:var(--cyan); font-size:14px; font-weight:700; text-align:right;}
+  .myrow .num{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:26px; height:26px; border-radius:50%;
+    font-size:12px; font-weight:700; color:#0B0D10;
+  }
+  .myrow .gap{color:var(--dim); font-size:12px;}
+  .myrow .tyre{
+    display:inline-flex; align-items:center; gap:6px; font-size:11.5px;
+  }
+  .myrow .tyre .circle{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:20px; height:20px; border-radius:50%;
+    font-size:10.5px; font-weight:700; border:1.5px solid;
+  }
+  .myrow .tyre .life{color:var(--dim); font-size:11px;}
+  .myrow .radio-btn{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:32px; height:32px; border-radius:4px;
+    background:var(--panel2); border:1px solid var(--line);
+    color:var(--cyan); cursor:pointer; transition:all 0.15s;
+  }
+  .myrow .radio-btn:hover{background:var(--panel);}
+  .myrow .radio-btn.active{background:var(--cyan); color:#0B0D10;}
+  .myrow .radio-btn svg{width:15px; height:15px;}
+  .myrow .pbtn{
+    font-family:inherit; font-size:11px; font-weight:700;
+    padding:7px 12px; border-radius:3px;
+    border:1px solid var(--line); background:var(--panel2); color:var(--dim);
+    letter-spacing:0.4px; min-width:52px;
+    transition:all 0.15s;
+  }
+  .myrow .pbtn:hover{color:var(--text); background:var(--panel);}
+  .myrow .pbtn.armed{
+    background:var(--green); color:#0B0D10; border-color:var(--green);
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+
+  .radio-panel{
+    grid-column: 1 / -1;
+    padding:12px 0 4px;
+    display:none;
+  }
+  .radio-panel.active{display:block;}
+  .radio-panel-title{
+    font-size:11px; color:var(--dim); text-transform:uppercase;
+    letter-spacing:0.4px; margin-bottom:8px; font-weight:700;
+  }
+  .radio-buttons{display:grid; grid-template-columns:repeat(4, 1fr); gap:6px;}
+  .radio-buttons .btn{justify-content:flex-start; font-size:11px; padding:8px 10px; text-align:left;}
+
+  .modal-overlay{position:fixed; inset:0; background:rgba(0,0,0,0.7);
+    display:none; align-items:center; justify-content:center; z-index:100; padding:16px;}
+  .modal-overlay.active{display:flex;}
+  .modal{background:var(--panel); border:1px solid var(--line); border-radius:4px;
+    max-width:760px; width:100%; padding:24px; max-height:88vh; overflow-y:auto;}
+  .modal h2{font-size:18px; margin-bottom:12px;}
+  .modal p{font-size:13px; color:var(--dim); line-height:1.6; margin-bottom:9px;}
+  .modal-actions{display:flex; gap:9px; justify-content:flex-end; margin-top:18px; flex-wrap:wrap;}
+
+  .save-slot{background:var(--panel); border:1px solid var(--line); border-radius:3px;
+    padding:14px; margin-bottom:9px; display:flex; justify-content:space-between;
+    align-items:center; gap:12px; flex-wrap:wrap;}
+  .save-slot .meta{font-size:12px; color:var(--dim);}
+
+  .banner-flash{position:fixed; top:70px; left:50%; transform:translateX(-50%);
+    padding:12px 24px; border-radius:3px; font-weight:700; font-size:13px;
+    letter-spacing:0.4px; z-index:50; opacity:0; pointer-events:none;
+    transition:opacity 0.3s ease, transform 0.3s ease; text-transform:uppercase;}
+  .banner-flash.show{opacity:1; transform:translateX(-50%) translateY(8px);}
+  .banner-yellow{background:var(--amber); color:#0B0D10;}
+  .banner-red{background:var(--red); color:#fff;}
+  .banner-green{background:var(--green); color:#0B0D10;}
+  .banner-blue{background:#3b82f6; color:#fff;}
+
+  .strat-row{background:var(--bg2); border-radius:3px; padding:10px 12px;}
+  .strat-label{font-size:12px; font-weight:700; margin-bottom:2px;}
+  .strat-sub{font-size:10.5px; color:var(--dim); margin-bottom:8px;}
+
+  .tyre-select{display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;}
+  .tyre-btn{padding:7px 12px; background:var(--panel2); border:1px solid var(--line);
+    border-radius:3px; font-size:12px; display:flex; align-items:center; gap:6px; cursor:pointer;
+    flex-direction:column; min-width:60px;}
+  .tyre-btn:disabled{opacity:0.35; cursor:not-allowed;}
+  .tyre-btn.active{border-color:var(--cyan); background:rgba(79,209,217,0.1);}
+  .tyre-btn .used-tag{font-size:9px; color:var(--dimmer); margin-top:2px;}
+  .tyre-dot{width:16px; height:16px; border-radius:50%; border:2px solid;}
+  .tyre-dot.S{border-color:var(--red);}
+  .tyre-dot.M{border-color:var(--amber);}
+  .tyre-dot.H{border-color:var(--text);}
+  .tyre-dot.I{border-color:var(--green);}
+  .tyre-dot.W{border-color:var(--cyan);}
+  .spanner{font-size:14px; line-height:1;}
+
+  .driver-strat{background:var(--panel2); padding:12px; border-radius:3px; margin-bottom:10px;}
+  .driver-strat-name{font-weight:700; font-size:13px; margin-bottom:8px; display:flex;
+    justify-content:space-between; align-items:center;}
+
+  @media (max-width:900px){
+    .hub-side{display:none;}
+    .ts-grid{grid-template-columns:1fr;}
+    .ts-header{padding:14px 18px;}
+    .ts-footer{padding:10px 16px calc(10px + env(safe-area-inset-bottom)); justify-content:stretch;}
+    .ts-footer .btn{flex:1;}
+    .intro-title{font-size:30px;}
+    .intro-wrap{padding:24px 18px;}
+    .topbar{padding:8px 12px; gap:8px 12px;}
+    .hub-main{padding:18px;}
+    .wk-body{padding:14px;}
+    .radio-buttons{grid-template-columns:repeat(2, 1fr);}
+    .speed-icon-btn{min-width:36px; height:30px; font-size:11px;}
+    .myrow{grid-template-columns: 26px 30px 52px 1fr 34px 52px; gap:6px; padding:10px 12px;}
+    .dp-stats{grid-template-columns:repeat(2, 1fr);}
+    .tt-header, .tt-row{grid-template-columns: 26px 50px 1fr 40px 50px 60px; gap:4px; padding:8px 10px;}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="screen active" id="screen-intro">
+    <div class="intro-wrap">
+      <div class="intro-title">PIT WALL<span>.</span></div>
+      <div class="intro-sub">Take the job. Hire the right people. Approve the right strategy. Deliver what the board demands — or lose the seat.</div>
+      <div class="intro-menu">
+        <button class="btn btn-primary" id="btnGoTeamSelect">New career</button>
+        <button class="btn btn-ghost" id="btnLoadGame">Continue</button>
+        <button class="btn btn-ghost" id="btnSaveSlots">Save slots</button>
+        <button class="btn btn-ghost" id="btnSettings">Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="screen" id="screen-teamselect">
+    <div class="ts-header">
+      <h1>Select your team</h1>
+      <p>Board expectations scale with your car. Win or be replaced.</p>
+    </div>
+    <div class="ts-grid" id="teamGrid"></div>
+    <div class="ts-footer">
+      <button class="btn btn-ghost" id="btnBackIntro">Back</button>
+      <button class="btn btn-primary" id="btnConfirmTeam" disabled>Take the job</button>
+    </div>
+  </div>
+
+  <div class="screen" id="screen-hub">
+    <div class="topbar">
+      <div class="brand"><span class="dot"></span> PIT WALL</div>
+      <div class="topbar-spacer"></div>
+      <div class="topbar-stat" id="hubTeamLabel"></div>
+      <div class="topbar-stat">Budget: <b id="hubBudget"></b></div>
+      <button class="season-btn" id="btnSeasonHistory">
+        Season <b id="hubSeason">1</b> <span class="caret">▾</span>
+      </button>
+      <div class="topbar-stat">Round <b id="hubRound"></b>/<span id="hubTotalRounds"></span></div>
+    </div>
+    <div class="hub-body">
+      <div class="hub-side">
+        <div class="side-block">
+          <div class="side-label">Board confidence</div>
+          <div id="confBox"></div>
+        </div>
+        <div class="side-block">
+          <div class="side-label">Board objective</div>
+          <div id="objectiveBox"></div>
+        </div>
+        <div class="side-block">
+          <div class="side-label">Championship</div>
+          <div class="side-row"><span>Constructors</span><b id="sideConsPos">—</b></div>
+          <div class="side-row"><span>Drivers (lead)</span><b id="sideDrivPos">—</b></div>
+        </div>
+        <div class="side-block">
+          <div class="side-label">Car</div>
+          <div class="side-row"><span>Pace</span><b id="sidePace"></b></div>
+          <div class="side-row"><span>Reliability</span><b id="sideReli"></b></div>
+          <div class="side-row"><span>Cost cap used</span><b id="sideCap"></b></div>
+        </div>
+      </div>
+      <div class="hub-main" id="hubMain"></div>
+    </div>
+  </div>
+
+  <div class="season-history" id="seasonHistory">
+    <div class="sh-header">
+      <button class="btn btn-ghost btn-sm" id="btnCloseSeasonHistory">← Back</button>
+      <div class="sh-tabs" id="shTabs"></div>
+    </div>
+    <div class="sh-body" id="shBody"></div>
+  </div>
+
+  <div class="screen" id="screen-weekend">
+    <div class="wk-header">
+      <div>
+        <div class="wk-round" id="wkRound"></div>
+        <div class="wk-track" id="wkTrack"></div>
+        <div class="wk-meta" id="wkMeta"></div>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="wkBackBtn">← Back to hub</button>
+    </div>
+    <div class="wk-body" id="wkBody"></div>
+  </div>
+
+  <div class="screen" id="screen-race">
+    <div class="race-header">
+      <div class="race-row">
+        <span class="race-track-name" id="raceTrackName"></span>
+        <span class="flag-indicator flag-green" id="flagIndicator">Green</span>
+        <span class="lap-counter">LAP <b id="lapNow">0</b>/<span id="lapTotal">0</span></span>
+        <span class="race-track-char" id="raceTrackMeta"></span>
+        <div class="speed-strip">
+          <button class="speed-icon-btn" id="speedPause" title="Pause">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+          </button>
+          <button class="speed-icon-btn" id="speed2" title="2x">2×</button>
+          <button class="speed-icon-btn" id="speedSkip" title="Skip to end">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h4v16H4zm6 8l8-8v16z"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="msg-ribbon" id="msgRibbon" title="Click for full message log">
+        <span class="ribbon-text" id="ribbonText">Race feed initialising…</span>
+        <span class="ribbon-pips" id="ribbonPips"></span>
+      </div>
+    </div>
+
+    <div class="race-tabs">
+      <button class="race-tab active" id="tabTower">Timing</button>
+      <button class="race-tab" id="tabTrack">Track</button>
+    </div>
+
+    <div class="race-view">
+      <div class="timing-tower" id="towerWrap">
+        <div class="tt-header">
+          <span>P</span>
+          <span>DRV</span>
+          <span>INTERVAL</span>
+          <span>TYRE</span>
+          <span>LIFE</span>
+          <span>ACTIONS</span>
+        </div>
+        <div id="towerBody"></div>
+      </div>
+      <div class="track-view" id="trackWrap" style="display:none;">
+        <canvas id="trackCanvas"></canvas>
+        <div class="sector-legend" id="sectorLegend"></div>
+      </div>
+    </div>
+
+    <div class="pitbox" id="pitbox">
+      <span class="label">PIT BOX</span>
+      <span class="empty" id="pitEmpty">— no cars in pit —</span>
+    </div>
+
+    <div class="mystrip" id="mystrip"></div>
+  </div>
+
+</div>
+
+<div class="banner-flash" id="bannerFlash"></div>
+<div class="modal-overlay" id="modalOverlay"><div class="modal" id="modalContent"></div></div>
+
+<script src="data.js"></script>
+<script src="game.js"></script>
+<script src="weekend.js"></script>
+</body>
+</html>
